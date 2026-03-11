@@ -12,6 +12,7 @@ A CLI tool for running multi-party AI conversations using the [Open Floor Protoc
 - **Open Floor Protocol** — structured turn-taking with floor request/grant/yield mechanics
 - **Four floor policies** — sequential, round-robin, moderated, free-for-all
 - **Four LLM providers** — Anthropic Claude, OpenAI GPT, Google Gemini, HuggingFace Inference API
+- **Text-to-image agents** — HuggingFace image generation models join conversations as visual artists
 - **Remote OFP agents** — connect any live OFP-compatible HTTP endpoint with `--remote`
 - **Autonomous mode** — run agent-only debates with `--no-human --topic`
 - **Dynamic agent management** — `/spawn` and `/kick` agents mid-conversation
@@ -92,14 +93,17 @@ type:name[:description[:model]]
 ### Flag format
 
 ```
--provider TYPE -name NAME [-system DESCRIPTION] [-model MODEL]
+-provider TYPE -name NAME [-type TASK] [-system DESCRIPTION] [-model MODEL]
 ```
 
 ```bash
 --agent "-provider hf -name Alice -system You are a marine biologist."
 --agent "-provider hf -name Bob -system You are a skeptical physicist. -model meta-llama/Llama-3.1-8B-Instruct"
 --agent "-provider anthropic -name Claude -system You are a helpful assistant."
+--agent "-provider hf -type Text-to-Image -name Flux -system photorealistic photography, dramatic lighting -model black-forest-labs/FLUX.1-dev"
 ```
+
+The `-type` flag maps to HuggingFace task names (e.g. `Text-to-Image`, `Text-Generation`). Defaults to `Text-Generation` when omitted.
 
 ---
 
@@ -114,13 +118,29 @@ type:name[:description[:model]]
 
 Default models are the smallest/cheapest available. Override per-agent with the `model` field in either spec format.
 
-**Confirmed working HuggingFace models:**
+**Confirmed working HuggingFace text-generation models:**
 - `meta-llama/Llama-3.2-1B-Instruct` — fastest, lightweight
 - `meta-llama/Llama-4-Scout-17B-16E-Instruct` — Llama 4, good reasoning
 - `meta-llama/Llama-4-Maverick-17B-128E-Instruct` — Llama 4, long context
 - `Qwen/Qwen3-235B-A22B` — large MoE, may queue on free tier
 - `deepseek-ai/DeepSeek-V3-0324` — strong reasoning, strips `<think>` blocks automatically
 - `openai/gpt-oss-20b` — OpenAI open-source on HuggingFace
+
+### Text-to-Image Agents
+
+Image agents listen to the conversation, build a prompt from the latest utterance combined with their style description, generate an image via HuggingFace Inference API, and report the saved file path back to the conversation.
+
+Images are saved to `./ofp-images/TIMESTAMP_name.png`.
+
+Use `-type Text-to-Image` in the flag format:
+
+```bash
+--agent "-provider hf -type Text-to-Image -name Flux -system photorealistic photography, dramatic lighting, urban -model black-forest-labs/FLUX.1-dev"
+```
+
+**Confirmed working text-to-image models:**
+- `black-forest-labs/FLUX.1-dev` — photorealistic, high quality, slower
+- `Tongyi-MAI/Z-Image-Turbo` — fast, anime/illustration style
 
 ---
 
@@ -202,6 +222,19 @@ When running with a human agent, these slash commands are available:
 
 ---
 
+## Example: Human + LLM + Two Image Artists
+
+```bash
+ofp-playground start \
+  --human-name Csabi \
+  --policy sequential \
+  --agent "hf:Rodney:You are Rodney Mullen, the godfather of street skateboarding. A quiet genius who sees skating as philosophy.:openai/gpt-oss-20b" \
+  --agent "-provider hf -type Text-to-Image -name Flux -system photorealistic skateboarding photography, dramatic lighting, urban concrete, cinematic composition, golden hour -model black-forest-labs/FLUX.1-dev" \
+  --agent "-provider hf -type Text-to-Image -name Turbo -system vibrant anime-style illustration, dynamic skateboarding action, motion blur, bold saturated colors, manga speed lines -model Tongyi-MAI/Z-Image-Turbo"
+```
+
+---
+
 ## Example: 8-Agent Skateboarding Debate
 
 ```bash
@@ -241,7 +274,8 @@ src/ofp_playground/
 │       ├── anthropic.py    # Anthropic Claude
 │       ├── openai.py       # OpenAI GPT
 │       ├── google.py       # Google Gemini
-│       └── huggingface.py  # HuggingFace Inference API
+│       ├── huggingface.py  # HuggingFace text-generation
+│       └── image.py        # HuggingFace text-to-image
 └── renderer/terminal.py    # Rich terminal output
 ```
 
