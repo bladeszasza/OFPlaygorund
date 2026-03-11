@@ -343,6 +343,17 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or DEFAULT_IMAGE_MODEL,
             )
+        elif task == "text-to-video":
+            from ofp_playground.agents.llm.video import VideoAgent
+            from ofp_playground.agents.llm.video import DEFAULT_MODEL as DEFAULT_VIDEO_MODEL
+            agent = VideoAgent(
+                name=name,
+                style=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or DEFAULT_VIDEO_MODEL,
+            )
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
@@ -466,7 +477,8 @@ def agents():
         "  [cyan]google[/cyan] / gemini     — Google Gemini (requires GOOGLE_API_KEY)\n"
         "  [cyan]hf[/cyan] / huggingface    — HuggingFace Inference API (requires HF_API_KEY)\n"
         "                             -type defaults to Text-Generation\n"
-        "                             use -type <task> for other HF tasks, e.g. -type Text-to-Image\n"
+        "                             use -type <task> for other HF tasks\n"
+        "                             e.g. -type Text-to-Image, -type Text-to-Video\n"
         "  [cyan]human[/cyan]               — Human participant (stdin/stdout)\n"
         "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP"
     )

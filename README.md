@@ -13,6 +13,7 @@ A CLI tool for running multi-party AI conversations using the [Open Floor Protoc
 - **Four floor policies** — sequential, round-robin, moderated, free-for-all
 - **Four LLM providers** — Anthropic Claude, OpenAI GPT, Google Gemini, HuggingFace Inference API
 - **Text-to-image agents** — HuggingFace image generation models join conversations as visual artists
+- **Text-to-video agents** — HuggingFace video generation models produce clips from conversation context
 - **Remote OFP agents** — connect any live OFP-compatible HTTP endpoint with `--remote`
 - **Autonomous mode** — run agent-only debates with `--no-human --topic`
 - **Dynamic agent management** — `/spawn` and `/kick` agents mid-conversation
@@ -141,6 +142,22 @@ Use `-type Text-to-Image` in the flag format:
 **Confirmed working text-to-image models:**
 - `black-forest-labs/FLUX.1-dev` — photorealistic, high quality, slower
 - `Tongyi-MAI/Z-Image-Turbo` — fast, anime/illustration style
+
+### Text-to-Video Agents
+
+Video agents work the same way as image agents — they listen to the conversation, build a prompt from the latest utterance combined with their style description, generate a video clip via HuggingFace Inference API, and report the saved file path back to the conversation.
+
+Videos are saved to `./ofp-videos/TIMESTAMP_name.mp4`.
+
+Use `-type Text-to-Video` in the flag format:
+
+```bash
+--agent "-provider hf -type Text-to-Video -name Wan -system cinematic skateboarding action, slow motion, dramatic camera angles -model Wan-AI/Wan2.2-TI2V-5B"
+```
+
+**Confirmed working text-to-video models:**
+- `Wan-AI/Wan2.2-TI2V-5B` — Wan 2.2 text/image-to-video, good motion quality
+- `tencent/HunyuanVideo-1.5` — Tencent HunyuanVideo, high fidelity clips
 
 ---
 
@@ -275,7 +292,8 @@ src/ofp_playground/
 │       ├── openai.py       # OpenAI GPT
 │       ├── google.py       # Google Gemini
 │       ├── huggingface.py  # HuggingFace text-generation
-│       └── image.py        # HuggingFace text-to-image
+│       ├── image.py        # HuggingFace text-to-image
+│       └── video.py        # HuggingFace text-to-video
 └── renderer/terminal.py    # Rich terminal output
 ```
 
