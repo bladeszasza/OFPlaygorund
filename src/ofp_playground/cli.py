@@ -63,7 +63,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str]]:
 
     if spec.startswith("-"):
         # Flag-based format: find each -flag and collect its value up to the next -flag
-        flag_re = re.compile(r"-(provider|name|system|model)\s+", re.IGNORECASE)
+        flag_re = re.compile(r"-(provider|name|system|model|type)\s+", re.IGNORECASE)
         matches = list(flag_re.finditer(spec))
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
@@ -75,12 +75,15 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str]]:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(spec)
             flags[key] = spec[start:end].strip()
 
-        agent_type = flags.get("provider", "").lower()
+        provider = flags.get("provider", "").lower()
+        # Normalize HF task type: "Text-to-Image" → "text-to-image"
+        modality = flags.get("type", "text-generation").lower().replace(" ", "-")
+        agent_type = f"{provider}:{modality}" if modality != "text-generation" else provider
         name = flags.get("name", "")
         description = flags.get("system", f"I am {name}, an AI assistant.")
         model_override = flags.get("model") or None
 
-        if not agent_type:
+        if not provider:
             raise click.BadParameter(f"Missing -provider in agent spec: {spec}")
         if not name:
             raise click.BadParameter(f"Missing -name in agent spec: {spec}")
@@ -321,24 +324,42 @@ async def _spawn_llm_agent(
             relevance_filter=settings.defaults.relevance_filter,
         )
 
-    elif agent_type in ("huggingface", "hf"):
+    elif agent_type in ("huggingface", "hf") or agent_type.startswith(("huggingface:", "hf:")):
         api_key = settings.get_huggingface_key()
         if not api_key:
             api_key = click.prompt(f"Enter HuggingFace API key for {name}", hide_input=True)
-        from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
-        agent = HuggingFaceAgent(
-            name=name,
-            synopsis=description,
-            bus=bus,
-            conversation_id=floor.conversation_id,
-            api_key=api_key,
-            model=model_override or settings.defaults.llm_model_huggingface,
-            relevance_filter=settings.defaults.relevance_filter,
-        )
+
+        # Extract task type from compound agent_type string (e.g. "hf:text-to-image")
+        task = agent_type.split(":", 1)[1] if ":" in agent_type else "text-generation"
+
+        if task == "text-to-image":
+            from ofp_playground.agents.llm.image import ImageAgent
+            from ofp_playground.agents.llm.image import DEFAULT_MODEL as DEFAULT_IMAGE_MODEL
+            agent = ImageAgent(
+                name=name,
+                style=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or DEFAULT_IMAGE_MODEL,
+            )
+        else:
+            # Default: text-generation (and any other text-in/text-out tasks)
+            from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
+            agent = HuggingFaceAgent(
+                name=name,
+                synopsis=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_huggingface,
+                relevance_filter=settings.defaults.relevance_filter,
+            )
 
     else:
         renderer.show_system_event(
-            f"Unknown agent type: {agent_type}. Use: anthropic, openai, google, huggingface"
+            f"Unknown agent type: {agent_type}. Use: anthropic, openai, google, hf"
+            f" (with -type for HF tasks, e.g. -type Text-to-Image)"
         )
         return
 
@@ -443,6 +464,9 @@ def agents():
         "  [cyan]anthropic[/cyan] / claude  — Anthropic Claude (requires ANTHROPIC_API_KEY)\n"
         "  [cyan]openai[/cyan] / gpt        — OpenAI GPT (requires OPENAI_API_KEY)\n"
         "  [cyan]google[/cyan] / gemini     — Google Gemini (requires GOOGLE_API_KEY)\n"
+        "  [cyan]hf[/cyan] / huggingface    — HuggingFace Inference API (requires HF_API_KEY)\n"
+        "                             -type defaults to Text-Generation\n"
+        "                             use -type <task> for other HF tasks, e.g. -type Text-to-Image\n"
         "  [cyan]human[/cyan]               — Human participant (stdin/stdout)\n"
         "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP"
     )
