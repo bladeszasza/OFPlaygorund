@@ -54,3 +54,8 @@ MANIFEST
 
 # Project specific
 ~/.ofp-playground/
+
+# Project output
+
+~/.ofp-videos/
+~/.ofp-images/
