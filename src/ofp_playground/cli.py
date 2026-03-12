@@ -488,6 +488,10 @@ def start(ctx: click.Context, policy: str, agents: tuple, remotes: tuple,
               help="Pre-spawn an agent (e.g. anthropic:Claude:You are helpful)")
 @click.option("--topic", "-t", default=None,
               help="Seed topic to start the conversation automatically")
+@click.option("--no-human", is_flag=True, default=False,
+              help="Watch-only mode: agents talk autonomously, UI shows the conversation")
+@click.option("--max-turns", "-n", default=None, type=int,
+              help="Stop automatically after N utterances")
 @click.option("--human-name", default="User",
               help="Display name for the human participant (default: User)")
 @click.option("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
@@ -496,10 +500,12 @@ def start(ctx: click.Context, policy: str, agents: tuple, remotes: tuple,
               help="Create a public Gradio share link")
 @click.pass_context
 def web(ctx: click.Context, policy: str, agents: tuple, topic: Optional[str],
-        human_name: str, host: str, port: int, share: bool):
+        no_human: bool, max_turns: Optional[int], human_name: str,
+        host: str, port: int, share: bool):
     """Start the OFP Playground Gradio web UI.
 
-    Opens a browser-based chat interface where you can talk to AI agents.
+    Opens a browser-based chat interface. Use --no-human to watch agents
+    talk autonomously.
     """
     verbose = ctx.obj.get("verbose", False)
     if verbose:
@@ -511,8 +517,8 @@ def web(ctx: click.Context, policy: str, agents: tuple, topic: Optional[str],
     try:
         asyncio.run(_run_web_session(
             floor_policy, agents, settings, verbose,
-            topic=topic, human_name=human_name,
-            host=host, port=port, share=share,
+            topic=topic, no_human=no_human, max_turns=max_turns,
+            human_name=human_name, host=host, port=port, share=share,
         ))
     except KeyboardInterrupt:
         console.print("\n[dim]Web session interrupted.[/dim]")
@@ -527,35 +533,39 @@ async def _run_web_session(
     settings: Settings,
     verbose: bool,
     topic: Optional[str] = None,
+    no_human: bool = False,
+    max_turns: Optional[int] = None,
     human_name: str = "User",
     host: str = "0.0.0.0",
     port: int = 7860,
     share: bool = False,
 ) -> None:
     """Run the web UI session (Gradio + OFP bus in the same process)."""
-    from ofp_playground.agents.web_human import WebHumanAgent
     from ofp_playground.renderer.gradio_ui import launch_web_session
     from ofp_playground.agents.registry import AgentRegistry
 
     bus = MessageBus()
     floor = FloorManager(bus, policy=policy, renderer=None)
-
-    human = WebHumanAgent(
-        name=human_name,
-        bus=bus,
-        conversation_id=floor.conversation_id,
-    )
-    floor.register_agent(human.speaker_uri, human.name)
-
     registry = AgentRegistry()
-    registry.register(human)
 
-    tasks = [floor.run(), human.run()]
+    human = None
+    tasks = [floor.run()]
+    agent_display_names: list[str] = []
+
+    if not no_human:
+        from ofp_playground.agents.web_human import WebHumanAgent
+        human = WebHumanAgent(
+            name=human_name,
+            bus=bus,
+            conversation_id=floor.conversation_id,
+        )
+        floor.register_agent(human.speaker_uri, human.name)
+        registry.register(human)
+        tasks.append(human.run())
+        agent_display_names.append(human_name)
 
     # Spawn pre-configured LLM agents
-    # Use a minimal renderer just for system messages in the terminal
     term_renderer = TerminalRenderer(console, show_floor_events=False)
-    agent_display_names: list[str] = [human_name]
     for spec in agent_specs:
         try:
             agent_type, name, description, model_ov = _parse_agent_spec(spec)
@@ -567,12 +577,20 @@ async def _run_web_session(
         except Exception as e:
             console.print(f"[red]Failed to spawn agent: {e}[/red]")
 
-    if topic:
-        async def _seed():
+    if topic or max_turns:
+        async def _orchestrate():
             await asyncio.sleep(1.5)
-            term_renderer.show_system_event(f'Topic: "{topic}"')
-            await _seed_topic(topic, floor, bus)
-        tasks.append(_seed())
+            if topic:
+                term_renderer.show_system_event(f'Topic: "{topic}"')
+                await _seed_topic(topic, floor, bus)
+            if max_turns:
+                while floor.history.__len__() < max_turns:
+                    await asyncio.sleep(2.0)
+                term_renderer.show_system_event(
+                    f"Reached {max_turns} turns — stopping."
+                )
+                floor.stop()
+        tasks.append(_orchestrate())
 
     # Get the running loop and launch Gradio from this coroutine's thread
     loop = asyncio.get_event_loop()

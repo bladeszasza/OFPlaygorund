@@ -131,7 +131,7 @@ async def _drain_output_queue(
 def launch_web_session(
     floor,
     bus,
-    human_agent,
+    human_agent,  # WebHumanAgent | None
     agent_specs_display: list[str],
     policy_name: str,
     loop: asyncio.AbstractEventLoop,
@@ -141,31 +141,38 @@ def launch_web_session(
 ) -> None:
     """Launch the Gradio web UI.  Must be called from the main thread after the
     asyncio event loop is already running in a background thread.
+
+    When human_agent is None the UI is read-only (autonomous agent mode).
     """
     import gradio as gr
 
+    human_uris = {human_agent.speaker_uri} if human_agent else set()
     gradio_renderer = GradioRenderer(
         agent_names=dict(floor.active_agents),
-        human_uris={human_agent.speaker_uri},
+        human_uris=human_uris,
     )
 
-    # Register renderer with floor so newly spawned agents appear in names
-    floor._renderer = None  # terminal renderer not used in web mode
+    if human_agent:
+        # Drain the WebHumanAgent's output queue (already registered on the bus)
+        asyncio.run_coroutine_threadsafe(
+            _drain_output_queue(human_agent.output_queue, gradio_renderer, None, loop),
+            loop,
+        )
+    else:
+        # No human: register an observer queue directly on the bus so we see all messages
+        observer_queue: asyncio.Queue = asyncio.Queue()
 
-    # Drain the WebHumanAgent output queue in the background event loop
-    asyncio.run_coroutine_threadsafe(
-        _drain_output_queue(human_agent.output_queue, gradio_renderer, None, loop),
-        loop,
-    )
+        async def _register_and_drain():
+            observer_uri = "tag:ofp-playground.local,2025:web-observer"
+            await bus.register(observer_uri, observer_queue)
+            await _drain_output_queue(observer_queue, gradio_renderer, None, loop)
+
+        asyncio.run_coroutine_threadsafe(_register_and_drain(), loop)
 
     def submit_message(user_text: str, history: list[dict]):
-        if not user_text.strip():
+        if not user_text or not user_text.strip():
             return "", history
-
-        # Add user message to local history immediately
         history = history + [{"role": "user", "content": f"**{human_agent.name}**: {user_text}"}]
-
-        # Send into OFP bus via the human agent's input queue
         asyncio.run_coroutine_threadsafe(
             human_agent.input_queue.put(user_text),
             loop,
@@ -173,18 +180,18 @@ def launch_web_session(
         return "", history
 
     def poll_history(history: list[dict]):
-        """Merge any new messages from agents into the chat history."""
         full = gradio_renderer.get_history()
-        # Only append messages not already in `history`
         existing_count = len(history)
         new_msgs = full[existing_count:]
-        # Filter out user messages we already added optimistically
-        agent_msgs = [m for m in new_msgs if m["role"] == "assistant"]
-        return history + agent_msgs
+        if human_agent:
+            # Filter out user messages we already added optimistically
+            new_msgs = [m for m in new_msgs if m["role"] == "assistant"]
+        return history + new_msgs
 
     with gr.Blocks(title="OFP Playground", theme=gr.themes.Soft()) as demo:
+        mode_label = "Autonomous" if not human_agent else "Interactive"
         gr.Markdown(
-            f"## OFP Playground\n"
+            f"## OFP Playground  —  {mode_label}\n"
             f"**Policy**: {policy_name}  |  "
             f"**Agents**: {', '.join(agent_specs_display)}"
         )
@@ -195,20 +202,22 @@ def launch_web_session(
             height=600,
             show_copy_button=True,
         )
-        with gr.Row():
-            msg_box = gr.Textbox(
-                placeholder="Type a message and press Enter...",
-                show_label=False,
-                scale=8,
-                autofocus=True,
-            )
-            send_btn = gr.Button("Send", scale=1, variant="primary")
 
-        # Submit on Enter or button click
-        msg_box.submit(submit_message, [msg_box, chatbot], [msg_box, chatbot])
-        send_btn.click(submit_message, [msg_box, chatbot], [msg_box, chatbot])
+        if human_agent:
+            with gr.Row():
+                msg_box = gr.Textbox(
+                    placeholder="Type a message and press Enter...",
+                    show_label=False,
+                    scale=8,
+                    autofocus=True,
+                )
+                send_btn = gr.Button("Send", scale=1, variant="primary")
+            msg_box.submit(submit_message, [msg_box, chatbot], [msg_box, chatbot])
+            send_btn.click(submit_message, [msg_box, chatbot], [msg_box, chatbot])
+        else:
+            gr.Markdown("*Watch-only mode — agents are talking autonomously.*")
 
-        # Auto-refresh to pull in agent responses (every 2 s)
+        # Auto-refresh to pull in new messages (every 2 s)
         timer = gr.Timer(2.0)
         timer.tick(poll_history, inputs=[chatbot], outputs=[chatbot])
 
