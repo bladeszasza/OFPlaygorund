@@ -252,6 +252,12 @@ async def _run_session(
             if topic:
                 renderer.show_system_event(f'Topic: "{topic}"')
                 await _seed_topic(topic, floor, bus)
+                # If human holds the floor in sequential mode, yield it so agents
+                # can respond to the seeded topic; human re-queues for next turn.
+                if not no_human and floor.floor_holder == human.speaker_uri:
+                    human._has_floor = False
+                    await human.yield_floor()
+                    await human.request_floor()
             if max_turns:
                 # Poll history and stop when turn count is reached
                 while floor.history.__len__() < max_turns:
