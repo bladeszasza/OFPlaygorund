@@ -156,10 +156,6 @@ class BaseLLMAgent(BasePlaygroundAgent):
         self._running = True
         await self._bus.register(self.speaker_uri, self._queue)
 
-        # LLM agents request floor when they have something to say
-        # For now, request floor to participate
-        await self.request_floor("Ready to participate")
-
         try:
             while self._running:
                 try:
