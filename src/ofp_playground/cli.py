@@ -133,9 +133,10 @@ async def _run_session(
     topic: Optional[str] = None,
     max_turns: Optional[int] = None,
     human_name: str = "User",
+    show_floor_events: bool = False,
 ) -> None:
     """Run the main conversation session."""
-    renderer = TerminalRenderer(console)
+    renderer = TerminalRenderer(console, show_floor_events=show_floor_events)
     bus = MessageBus()
 
     floor = FloorManager(bus, policy=policy, renderer=renderer)
@@ -438,9 +439,16 @@ def main(ctx: click.Context, verbose: bool):
     default="User",
     help="Display name for the human participant (default: User)",
 )
+@click.option(
+    "--show-floor-events",
+    is_flag=True,
+    default=False,
+    help="Show floor grant/request system events (hidden by default)",
+)
 @click.pass_context
 def start(ctx: click.Context, policy: str, agents: tuple, remotes: tuple,
-          no_human: bool, topic: Optional[str], max_turns: Optional[int], human_name: str):
+          no_human: bool, topic: Optional[str], max_turns: Optional[int],
+          human_name: str, show_floor_events: bool):
     """Start an interactive OFP conversation session.
 
     Agent spec formats (both supported):\n
@@ -455,7 +463,7 @@ def start(ctx: click.Context, policy: str, agents: tuple, remotes: tuple,
         asyncio.run(_run_session(
             floor_policy, agents, remotes, settings, verbose,
             no_human=no_human, topic=topic, max_turns=max_turns,
-            human_name=human_name,
+            human_name=human_name, show_floor_events=show_floor_events,
         ))
     except KeyboardInterrupt:
         console.print("\n[dim]Session interrupted.[/dim]")

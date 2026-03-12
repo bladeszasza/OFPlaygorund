@@ -43,11 +43,12 @@ ICONS = {
 class TerminalRenderer:
     """Renders OFP conversations to the terminal using Rich."""
 
-    def __init__(self, console: Optional[Console] = None):
+    def __init__(self, console: Optional[Console] = None, show_floor_events: bool = False):
         self._console = console or Console()
         self._agent_colors: dict[str, str] = {}
         self._color_idx = 0
         self._human_uris: set[str] = set()
+        self.show_floor_events = show_floor_events
 
     def _get_color(self, speaker_uri: str) -> str:
         if "human" in speaker_uri:

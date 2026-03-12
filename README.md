@@ -210,6 +210,7 @@ Options:
   --no-human                 Run without human input (autonomous mode)
   -t, --topic TEXT           Seed topic to start the conversation
   -n, --max-turns INT        Stop automatically after N utterances
+  --show-floor-events        Show floor grant/request events (hidden by default)
   -v, --verbose              Enable debug logging
 ```
 

@@ -141,7 +141,7 @@ class FloorManager:
             ],
         )
         await self._send(envelope)
-        if self._renderer:
+        if self._renderer and self._renderer.show_floor_events:
             agent_name = self._agents.get(speaker_uri, speaker_uri)
             self._renderer.show_system_event(f"Floor granted to {agent_name}")
 
@@ -194,8 +194,8 @@ class FloorManager:
         if granted:
             await self._grant_floor(sender_uri)
         else:
-            agent_name = self._agents.get(sender_uri, sender_uri)
-            if self._renderer:
+            if self._renderer and self._renderer.show_floor_events:
+                agent_name = self._agents.get(sender_uri, sender_uri)
                 self._renderer.show_system_event(f"{agent_name} is waiting for the floor")
 
     async def _handle_yield_floor(self, envelope: Envelope) -> None:

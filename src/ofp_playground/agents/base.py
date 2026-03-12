@@ -45,6 +45,7 @@ class BasePlaygroundAgent:
         self._queue: asyncio.Queue = asyncio.Queue()
         self._running = False
         self._conversation_history: list[dict] = []
+        self._pending_floor_request: bool = False  # prevent duplicate floor requests
 
     @property
     def speaker_uri(self) -> str:
@@ -68,6 +69,9 @@ class BasePlaygroundAgent:
         await self._bus.send(envelope)
 
     async def request_floor(self, reason: str = "") -> None:
+        if self._pending_floor_request:
+            return
+        self._pending_floor_request = True
         envelope = Envelope(
             sender=self._make_sender(),
             conversation=self._make_conversation(),
@@ -76,6 +80,7 @@ class BasePlaygroundAgent:
         await self.send_envelope(envelope)
 
     async def yield_floor(self, reason: str = "@complete") -> None:
+        self._pending_floor_request = False
         from openfloor import Event
         envelope = Envelope(
             sender=self._make_sender(),
