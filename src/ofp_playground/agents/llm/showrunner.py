@@ -243,22 +243,28 @@ class OrchestratorAgent(HuggingFaceAgent):
         self._mission = mission
         self._stop_callback = stop_callback
 
-    @property
-    def _worker_agent_names(self) -> list[str]:
-        """Names of worker agents (excludes self, media agents, floor-manager)."""
-        names = []
-        for uri, name in self._name_registry.items():
-            if uri == self.speaker_uri:
-                continue
-            if any(k in uri for k in ("image", "video", "audio", "floor-manager")):
-                continue
-            names.append(name)
-        return names
+    _URI_TYPE_LABELS = {
+        "image-": "image generation",
+        "video-": "video generation",
+        "audio-": "audio generation",
+        "multimodal-": "vision/multimodal",
+        "llm-": "text",
+    }
+
+    def _agent_type_label(self, uri: str) -> str:
+        tail = uri.split(":")[-1]
+        for prefix, label in self._URI_TYPE_LABELS.items():
+            if tail.startswith(prefix):
+                return label
+        return "text"
 
     def _build_system_prompt(self, participants: list[str]) -> str:
-        agent_list = "\n".join(f"- {n}" for n in self._worker_agent_names)
-        if not agent_list:
-            agent_list = "- (agents joining...)"
+        lines = []
+        for uri, name in self._name_registry.items():
+            if uri == self.speaker_uri or "floor-manager" in uri:
+                continue
+            lines.append(f"- {name} ({self._agent_type_label(uri)})")
+        agent_list = "\n".join(lines) if lines else "- (agents joining...)"
         return ORCHESTRATOR_SYSTEM_PROMPT.format(
             name=self._name,
             agent_list=agent_list,

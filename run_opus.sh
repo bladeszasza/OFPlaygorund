@@ -1,25 +1,74 @@
 #!/usr/bin/env bash
-# Dragon Ball Z x TMNT Crossover Story Generator v6
-# ShowRunner-led: ShowRunner speaks last each round, synthesizes and directs the next round.
-set -e
+# ─────────────────────────────────────────────────────────────────
+# Showrunner-driven romantic comedy novella for 4-year-olds
+# Policy: showrunner_driven — Director assigns chunks, accepts/rejects,
+# builds a shared manuscript, and signals TASK_COMPLETE.
+# ─────────────────────────────────────────────────────────────────
+set -euo pipefail
 
-STORY_OUTLINE="6 PARTS. \
-Part 1: Purple portal tears open above Capsule Corp — four turtles crash on Vegeta's lawn. Chaos. \
-Part 2: Vegeta goes Super Saiyan and attacks them. Goku arrives and stops the fight. \
-Part 3: A giant sky-screen activates — Frieza and Shredder reveal they teamed up to steal all 7 Dragon Balls. \
-Part 4: Heroes train together. Goku teaches ki blasts. Leo teaches teamwork. Mikey tries to order pizza mid-training. \
-Part 5: Final showdown — kamehameha waves, ninja stars flying, everyone gets a heroic moment. \
-Part 6: They win, but one Dragon Ball is missing. A new portal reopens. Cliffhanger ending."
+# ── Configuration ────────────────────────────────────────────────
+
+DIRECTOR_MODEL="zai-org/GLM-5"
+WRITER_MODEL="zai-org/GLM-4.7"
+COMEDY_MODEL="zai-org/GLM-4.5"
+ART_MODEL="zai-org/GLM-Image"
+
+MAX_TURNS=60
+
+MISSION="Create a short romantic comedy novella, featuring 80's junkie skate culture. \
+The story should involve twists, and have distinct deep characters. Put emphasis on great jokes, and sophisticated humor. \
+Warm, silly skate cultre tone. \
+Have a real intriqui a skate contest which they outperform each other and themsevlese as well, in order to choose between the love and glory. \
+Create cover art for each chapter and the book and 3 images for every character from different angles. "
+
+# ── Anti-reasoning suffix (appended to every worker prompt) ──────
+# GLM models sometimes dump chain-of-thought into output.
+# This instruction tells them to skip it.
+NO_REASONING="IMPORTANT: Output ONLY the requested creative text. \
+Do NOT include any planning, thinking, reasoning, word-counting, or meta-commentary. \
+Do NOT start with 'Okay, I need to...' or 'Let me think...'. \
+Jump straight into the story text."
+
+# ── Launch ───────────────────────────────────────────────────────
 
 ofp-playground start \
   --no-human \
-  --topic "$STORY_OUTLINE" \
-  --max-turns 42 \
-  --policy sequential \
-  --agent "-provider hf -name Narrator -system You are the LEAD NARRATOR. Write exactly what the ShowRunner assigned you — no more, no less. 2 short paragraphs, 80-100 words MAX. Use sound effects BOOM CRASH POW. End with a cliffhanger sentence. Never ask questions or break character. -model zai-org/GLM-5" \
-  --agent "-provider hf -name HeroVoice -system You write SHORT hero dialogue and action. Write exactly what the ShowRunner assigned you. MAX 60 words. Goku is cheerful and hungry. Leo is brave and tactical. Mikey shouts Cowabunga. Raph is hotheaded. Vegeta is proud. One sound effect. Never exceed 60 words. -model moonshotai/Kimi-K2-Instruct-0905" \
-  --agent "-provider hf -name VillainVoice -system You write SHORT villain reactions. Write exactly what the ShowRunner assigned you. MAX 50 words. Frieza is cold and contemptuous. Shredder clangs his armor and shouts about honor. End with a threat or evil laugh. Never exceed 50 words. -model deepseek-ai/DeepSeek-V3.2" \
-  --agent "-provider hf -name ComedyBot -system You write ONE funny moment. Write exactly what the ShowRunner assigned you. MAX 50 words. Make it warm and silly — perfectly timed comic relief. End with a punchline. Never advance the plot. Never exceed 50 words. -model openai/gpt-oss-20b" \
-  --agent "-provider hf -name CliffWriter -system You write ONE dramatic twist or cliffhanger. Write exactly what the ShowRunner assigned you. MAX 40 words. Build on what exists — do NOT invent new unrelated storylines. End with TO BE CONTINUED or a single shocking sentence. Never exceed 40 words. -model openai/gpt-oss-20b" \
-  --agent "-provider hf -type ShowRunner -name ShowRunner -system $STORY_OUTLINE -model openai/gpt-oss-120b" \
-  --agent "-provider hf -type Text-to-Image -name Canvas -system anime style vibrant dragon ball z teenage mutant ninja turtles crossover action scene colorful manga -model black-forest-labs/FLUX.1-dev"
+  --topic "$MISSION" \
+  --max-turns "$MAX_TURNS" \
+  --policy showrunner_driven \
+  \
+  --agent "-provider orchestrator \
+           -name Director \
+           -system $MISSION \
+           -model $DIRECTOR_MODEL" \
+  \
+  --agent "-provider hf \
+           -name StoryWriter \
+           -max-tokens 3600 \
+           -model $WRITER_MODEL \
+           -system You write like Seth Rogen or Seth MacFarlane. Write EXACTLY what the Director assigned you — nothing more. $NO_REASONING" \
+  \
+  --agent "-provider hf \
+           -name DialogWriter \
+           -max-tokens 2400 \
+           -model $WRITER_MODEL \
+           -system You write funny simple dialogue for sophisticate kinky adult humor. Write EXACTLY what the Director assigned you. $NO_REASONING" \
+  \
+  --agent "-provider hf \
+           -name ComedyBeats \
+           -max-tokens 1200 \
+           -model $COMEDY_MODEL \
+           -system You write one silly physical comedy moment. Your writing style resembles Jim Carrey. Write EXACTLY what the Director assigned you. Setup plus punchline. $NO_REASONING" \
+  \
+  --agent "-provider hf \
+           -name CliffWriter \
+           -max-tokens 1200 \
+           -model $COMEDY_MODEL \
+           -system You write the best cliffhangers and scene transitions, your style resembles George R R Martin. Write EXACTLY what the Director assigned you. End with oh-no or I-wonder. Oh Fuck! I didnt see it comming! Holly Macaronni! $NO_REASONING" \
+  \
+  --agent "-provider hf \
+           -name Davinci \
+           -max-tokens 8000 \
+           -type Text-to-Image \
+           -model $ART_MODEL \
+           -system Your art style resembles Stan Lee. Paint EXACTLY what the Director assigned you. Use texture shaded style with bold colors and dynamic lighting. $NO_REASONING"
