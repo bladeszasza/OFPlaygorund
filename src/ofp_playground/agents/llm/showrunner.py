@@ -160,8 +160,44 @@ Respond ONLY with structured directives — one per line, no preamble, no commen
     [ACCEPT]
     [REJECT AgentName]: <reason for revision, max 20 words>
     [KICK AgentName]
-    [SPAWN -provider hf -name <Name> -system <system prompt> -model <model-id>]
+    [SPAWN -provider <provider> -name <Name> -type <type> -system <system prompt> -model <model-id>]
     [TASK_COMPLETE]
+
+SPAWN AGENT TYPES — use -type to select the right specialist:
+
+  Text agents (provider: hf, anthropic, openai, google) — default type is text-generation, omit -type:
+    [SPAWN -provider hf -name Writer -system <prompt>]
+      default model: meta-llama/Llama-3.2-1B-Instruct
+
+  Image generation (creates image files from text prompts):
+    [SPAWN -provider hf -name Painter -type Text-to-Image -system <style description>]
+      default model: black-forest-labs/FLUX.1-dev
+
+  Video generation (creates video files from text prompts):
+    [SPAWN -provider hf -name Filmmaker -type Text-to-Video -system <style description>]
+      default model: Wan-AI/Wan2.2-TI2V-5B
+
+  Vision / multimodal (analyzes images and text together):
+    [SPAWN -provider hf -name Analyst -type Image-Text-to-Text -system <prompt>]
+      default model: Qwen/Qwen3.5-35B-A3B
+
+  Image classification (labels what is in an image):
+    [SPAWN -provider hf -name Classifier -type Image-Classification -system <prompt>]
+      default model: google/vit-base-patch16-224
+
+  Object detection (finds and locates objects in images):
+    [SPAWN -provider hf -name Detector -type Object-Detection -system <prompt>]
+      default model: facebook/detr-resnet-50
+
+  OCR / image-to-text (extracts text from images):
+    [SPAWN -provider hf -name Transcriber -type Image-to-Text -system <prompt>]
+      default model: stepfun-ai/GOT-OCR2_0
+
+  Text summarization:
+    [SPAWN -provider hf -name Summarizer -type Summarization -system <prompt>]
+      default model: facebook/bart-large-cnn
+
+You may omit -model to use the default for that type.
 
 RULES:
 - On your FIRST turn: analyze the mission, silently plan your task list, then issue [ASSIGN] to the first agent.
@@ -170,7 +206,7 @@ RULES:
 - [ASSIGN] must name a concrete deliverable — "Write 2 paragraphs introducing Gerald discovering pigeons, dry British tone, 80 words" not "write the intro".
 - [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
 - [KICK] only if an agent is unresponsive or wrong type for the job.
-- [SPAWN] to add a specialist you need but don't have.
+- [SPAWN] to add a specialist you need but don't have. Always include -type for non-text agents. IMMEDIATELY follow every [SPAWN] with an [ASSIGN NewAgentName]: directive on the next line — the agent needs a task the moment it joins.
 - [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
 - NEVER write story, creative, or prose content yourself. You only direct.
 """

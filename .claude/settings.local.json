@@ -22,7 +22,8 @@
       "Bash(python3 -c \"from huggingface_hub import InferenceClient; import inspect; print\\(inspect.signature\\(InferenceClient.text_to_video\\)\\)\")",
       "Bash(python -c \":*)",
       "WebFetch(domain:openfloor.dev)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }
