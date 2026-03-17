@@ -10,6 +10,7 @@ class FloorPolicy(str, Enum):
     ROUND_ROBIN = "round_robin"
     MODERATED = "moderated"
     FREE_FOR_ALL = "free_for_all"
+    SHOWRUNNER_DRIVEN = "showrunner_driven"
 
 
 class FloorController:

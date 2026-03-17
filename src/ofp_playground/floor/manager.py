@@ -85,6 +85,8 @@ class FloorManager:
         self._agents_spoken_this_round: set[str] = set()
         self._director_uri: Optional[str] = None
         self._showrunner_uri: Optional[str] = None
+        self._orchestrator_uri: Optional[str] = None
+        self._spawn_callback: Optional[callable] = None  # set externally after creation
 
     @property
     def speaker_uri(self) -> str:
@@ -117,6 +119,14 @@ class FloorManager:
     def register_showrunner(self, speaker_uri: str) -> None:
         """Mark an agent as the show runner (gets floor at round boundaries, after story agents)."""
         self._showrunner_uri = speaker_uri
+
+    def register_orchestrator(self, speaker_uri: str) -> None:
+        """Mark an agent as the SHOWRUNNER_DRIVEN orchestrator.
+
+        The orchestrator gets the floor first and after every non-orchestrator utterance.
+        Its utterances are parsed for structured directives ([ASSIGN], [REJECT], etc.).
+        """
+        self._orchestrator_uri = speaker_uri
 
     async def grant_to(self, speaker_uri: str) -> None:
         """Directly grant floor to a specific agent, bypassing the request queue."""
@@ -213,40 +223,189 @@ class FloorManager:
 
         self._history.add(utterance)
 
-        # Track round completion
+        # ----------------------------------------------------------------
+        # SHOWRUNNER_DRIVEN: orchestrator utterance → parse its directives
+        # ----------------------------------------------------------------
+        if self._orchestrator_uri and sender_uri == self._orchestrator_uri:
+            if self._renderer:
+                self._renderer.show_utterance(
+                    sender_uri, sender_name, text,
+                    media_key=media_key, media_path=media_path,
+                )
+            await self._handle_orchestrator_directives(text)
+            return
+
+        # Track round completion / floor routing for non-orchestrator paths
         if sender_uri != self.speaker_uri:
             self._agents_spoken_this_round.add(sender_uri)
-            text_agents = {
-                uri for uri in self._agents
-                if "image" not in uri and "video" not in uri and "audio" not in uri
-                and uri != self._showrunner_uri
-            }
-            if text_agents and text_agents.issubset(self._agents_spoken_this_round):
-                self._round_count += 1
-                self._agents_spoken_this_round.clear()
-                if self._showrunner_uri:
-                    # ShowRunner speaks last — synthesizes round and directs next
-                    await self.grant_to(self._showrunner_uri)
-                    if self._renderer:
-                        self._renderer.show_system_event(
-                            f"Round {self._round_count} complete — ShowRunner has the floor"
-                        )
-                elif self._director_uri:
-                    # Director speaks first next round
-                    await self.grant_to(self._director_uri)
-                    if self._renderer:
-                        self._renderer.show_system_event(
-                            f"Round {self._round_count} complete — Director has the floor"
-                        )
-                else:
-                    await self._inject_round_summary()
 
-        # Display (bus already delivered the envelope to all other agents)
+            if self._orchestrator_uri:
+                # SHOWRUNNER_DRIVEN: every worker utterance returns floor to orchestrator
+                is_media = any(k in sender_uri for k in ("image", "video", "audio"))
+                if not is_media:
+                    await self.grant_to(self._orchestrator_uri)
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
+                        )
+            else:
+                # Existing round-boundary logic (showrunner / director / summary)
+                text_agents = {
+                    uri for uri in self._agents
+                    if "image" not in uri and "video" not in uri and "audio" not in uri
+                    and uri != self._showrunner_uri
+                }
+                if text_agents and text_agents.issubset(self._agents_spoken_this_round):
+                    self._round_count += 1
+                    self._agents_spoken_this_round.clear()
+                    if self._showrunner_uri:
+                        await self.grant_to(self._showrunner_uri)
+                        if self._renderer:
+                            self._renderer.show_system_event(
+                                f"Round {self._round_count} complete — ShowRunner has the floor"
+                            )
+                    elif self._director_uri:
+                        await self.grant_to(self._director_uri)
+                        if self._renderer:
+                            self._renderer.show_system_event(
+                                f"Round {self._round_count} complete — Director has the floor"
+                            )
+                    else:
+                        await self._inject_round_summary()
+
+        # Display
         if self._renderer:
             self._renderer.show_utterance(
                 sender_uri, sender_name, text,
                 media_key=media_key, media_path=media_path,
             )
+
+    def _resolve_agent_uri_by_name(self, name: str) -> Optional[str]:
+        """Look up a speakerUri by conversational name (case-insensitive)."""
+        name_lower = name.lower()
+        for uri, agent_name in self._agents.items():
+            if agent_name.lower() == name_lower:
+                return uri
+        return None
+
+    async def _send_directed_utterance(self, text: str) -> None:
+        """Broadcast a floor-manager utterance (used for ASSIGN/REJECT directives)."""
+        de = DialogEvent(
+            speakerUri=self.speaker_uri,
+            id=str(uuid.uuid4()),
+            features={"text": TextFeature(tokens=[Token(value=text)])},
+        )
+        envelope = Envelope(
+            sender=self._make_sender(),
+            conversation=self._make_conversation(),
+            events=[UtteranceEvent(dialogEvent=de)],
+        )
+        await self._send(envelope)
+
+    async def _handle_orchestrator_directives(self, text: str) -> None:
+        """Parse and execute structured directives emitted by the OrchestratorAgent.
+
+        Directives (one per line):
+            [ASSIGN AgentName]: task
+            [ACCEPT]
+            [REJECT AgentName]: reason
+            [KICK AgentName]
+            [SPAWN -provider hf -name X -system Y -model Z]
+            [TASK_COMPLETE]
+        """
+        import re
+
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            # [ASSIGN AgentName]: task  — grant floor first, then broadcast directive
+            m = re.match(r"\[ASSIGN\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            if m:
+                target_name = m.group(1).strip()
+                task = m.group(2).strip()
+                target_uri = self._resolve_agent_uri_by_name(target_name)
+                if target_uri:
+                    # Grant before broadcasting so the agent's _has_floor=True suppresses self-request
+                    await self.grant_to(target_uri)
+                    await self._send_directed_utterance(
+                        f"[DIRECTIVE for {target_name}]: {task}"
+                    )
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"[Orchestrator → {target_name}]: {task[:60]}"
+                        )
+                else:
+                    logger.warning("Orchestrator [ASSIGN]: agent '%s' not found", target_name)
+                continue
+
+            # [ACCEPT]
+            if re.match(r"\[ACCEPT\]", line, re.IGNORECASE):
+                if self._renderer:
+                    self._renderer.show_system_event("[Orchestrator] Output accepted")
+                continue
+
+            # [REJECT AgentName]: reason
+            m = re.match(r"\[REJECT\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            if m:
+                target_name = m.group(1).strip()
+                reason = m.group(2).strip()
+                target_uri = self._resolve_agent_uri_by_name(target_name)
+                if target_uri:
+                    await self.grant_to(target_uri)
+                    await self._send_directed_utterance(
+                        f"[DIRECTIVE for {target_name}]: Revision requested — {reason}"
+                    )
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"[Orchestrator] Rejected {target_name}: {reason[:60]}"
+                        )
+                else:
+                    logger.warning("Orchestrator [REJECT]: agent '%s' not found", target_name)
+                continue
+
+            # [KICK AgentName]
+            m = re.match(r"\[KICK\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                target_name = m.group(1).strip()
+                target_uri = self._resolve_agent_uri_by_name(target_name)
+                if target_uri:
+                    self.unregister_agent(target_uri)
+                    await self._bus.unregister(target_uri)
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"[Orchestrator] Kicked {target_name}"
+                        )
+                else:
+                    logger.warning("Orchestrator [KICK]: agent '%s' not found", target_name)
+                continue
+
+            # [SPAWN spec]
+            m = re.match(r"\[SPAWN\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                spec_str = m.group(1).strip()
+                if self._spawn_callback:
+                    try:
+                        await self._spawn_callback(spec_str)
+                        if self._renderer:
+                            self._renderer.show_system_event(
+                                f"[Orchestrator] Spawned: {spec_str[:60]}"
+                            )
+                    except Exception as e:
+                        logger.error("Orchestrator [SPAWN] failed: %s", e, exc_info=True)
+                        if self._renderer:
+                            self._renderer.show_system_event(f"[Orchestrator] Spawn failed: {e}")
+                else:
+                    logger.warning("Orchestrator [SPAWN]: no spawn_callback registered")
+                continue
+
+            # [TASK_COMPLETE]
+            if re.match(r"\[TASK_COMPLETE\]", line, re.IGNORECASE):
+                if self._renderer:
+                    self._renderer.show_system_event("[Orchestrator] Task complete — stopping")
+                self.stop()
+                return
 
     async def _inject_round_summary(self) -> None:
         """Inject a director note between rounds to keep agents aligned."""

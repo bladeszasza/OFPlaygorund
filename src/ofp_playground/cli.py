@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 import click
 from rich.console import Console
 
@@ -145,6 +147,19 @@ async def _run_session(
     renderer.show_header(floor.conversation_id, policy.value, 0)
 
     registry = AgentRegistry()
+
+    # Spawn callback for OrchestratorAgent [SPAWN] directives (set after registry exists)
+    async def _floor_spawn_callback(spec_str: str) -> None:
+        try:
+            agent_type, name, description, model_ov = _parse_agent_spec(spec_str)
+            await _spawn_llm_agent(
+                agent_type, name, description, floor, bus, registry, renderer, settings, model_ov
+            )
+        except Exception as e:
+            logger.error("spawn_callback failed for spec '%s': %s", spec_str, e)
+            renderer.show_system_event(f"Orchestrator spawn failed: {e}")
+
+    floor._spawn_callback = _floor_spawn_callback
     tasks = [floor.run()]
 
     if not no_human:
@@ -258,9 +273,13 @@ async def _run_session(
                     human._has_floor = False
                     await human.yield_floor()
                     await human.request_floor()
+                # SHOWRUNNER_DRIVEN: orchestrator speaks first
+                if floor._orchestrator_uri:
+                    await asyncio.sleep(0.2)
+                    await floor.grant_to(floor._orchestrator_uri)
                 # Director gets the floor first — but only when ShowRunner is not present
                 # (ShowRunner speaks last, so Director directs before story agents respond)
-                if floor._director_uri and not floor._showrunner_uri:
+                elif floor._director_uri and not floor._showrunner_uri:
                     await asyncio.sleep(0.2)  # let topic envelope reach all agent queues
                     await floor.grant_to(floor._director_uri)
             if max_turns:
@@ -494,6 +513,22 @@ async def _spawn_llm_agent(
                 relevance_filter=settings.defaults.relevance_filter,
             )
 
+    elif agent_type in ("orchestrator",):
+        api_key = settings.get_huggingface_key()
+        if not api_key:
+            api_key = click.prompt(f"Enter HuggingFace API key for {name}", hide_input=True)
+        from ofp_playground.agents.llm.showrunner import OrchestratorAgent
+        agent = OrchestratorAgent(
+            name=name,
+            mission=description,
+            bus=bus,
+            conversation_id=floor.conversation_id,
+            api_key=api_key,
+            model=model_override or settings.defaults.llm_model_huggingface,
+            stop_callback=floor.stop,
+        )
+        floor.register_orchestrator(agent.speaker_uri)
+
     elif agent_type in ("director", "director-hf"):
         api_key = settings.get_huggingface_key()
         if not api_key:
@@ -550,7 +585,7 @@ def main(ctx: click.Context, verbose: bool):
 @click.option(
     "--policy", "-p",
     default="sequential",
-    help="Floor policy: sequential, round_robin, moderated, free_for_all",
+    help="Floor policy: sequential, round_robin, moderated, free_for_all, showrunner_driven",
 )
 @click.option(
     "--agent", "-a",
@@ -793,6 +828,10 @@ def agents():
         "                             -system carries the story outline; '6 PARTS ...' sets part count\n"
         "  [cyan]hf -type ShowRunner[/cyan] — Show runner (HF LLM, speaks last each round; synthesizes + directs)\n"
         "                             -system carries the story outline; '6 PARTS ...' sets part count\n"
+        "  [cyan]orchestrator[/cyan]        — Intelligent orchestrator (SHOWRUNNER_DRIVEN policy)\n"
+        "                             speaks first, assigns tasks, accepts/rejects/spawns/kicks agents\n"
+        "                             -system carries the mission description\n"
+        "                             directives: [ASSIGN], [ACCEPT], [REJECT], [KICK], [SPAWN], [TASK_COMPLETE]\n"
         "  [cyan]human[/cyan]               — Human participant (stdin/stdout)\n"
         "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP"
     )
