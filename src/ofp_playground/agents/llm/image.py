@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from openfloor import Envelope
+from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.base import BasePlaygroundAgent
 from ofp_playground.bus.message_bus import MessageBus
@@ -47,6 +47,23 @@ class ImageAgent(BasePlaygroundAgent):
         self._last_text: Optional[str] = None
         self._raw_prompt: Optional[str] = None  # pre-built prompt from ShowRunner [IMAGE]: directive
         OUTPUT_DIR.mkdir(exist_ok=True)
+
+    def _build_manifest(self) -> Manifest:
+        return Manifest(
+            identification=Identification(
+                speakerUri=self._speaker_uri,
+                serviceUrl=self._service_url,
+                conversationalName=self._name,
+                role="Image generation agent",
+            ),
+            capabilities=[
+                Capability(
+                    keyphrases=["text-to-image", "image-generation"],
+                    descriptions=[self._style],
+                    supportedLayers=SupportedLayers(input=["text"], output=["image"]),
+                )
+            ],
+        )
 
     def _build_prompt(self, text: str) -> str:
         """Build a clean image prompt from story text."""
@@ -152,6 +169,7 @@ class ImageAgent(BasePlaygroundAgent):
     async def run(self) -> None:
         self._running = True
         await self._bus.register(self.speaker_uri, self._queue)
+        await self._publish_manifest()
 
         try:
             while self._running:

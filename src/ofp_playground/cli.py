@@ -154,6 +154,28 @@ async def _run_session(
     async def _floor_spawn_callback(spec_str: str) -> None:
         try:
             agent_type, name, description, model_ov, max_tokens_ov = _parse_agent_spec(spec_str)
+            task_type = agent_type.split(":", 1)[1] if ":" in agent_type else "text-generation"
+
+            # Manifest-based check (rich capability info)
+            existing = floor.find_agent_by_manifest(name, task_type)
+            if existing:
+                uri, manifest = existing
+                existing_name = manifest.identification.conversationalName or uri
+                caps = [kp for cap in (manifest.capabilities or []) for kp in (cap.keyphrases or [])]
+                caps_str = ", ".join(caps) if caps else "unknown"
+                renderer.show_system_event(
+                    f"[Orchestrator] Skipping spawn of '{name}' — "
+                    f"'{existing_name}' already registered (capabilities: [{caps_str}])"
+                )
+                return
+
+            # Registry fallback: name check that works even before manifests arrive
+            if registry.by_name(name):
+                renderer.show_system_event(
+                    f"[Orchestrator] Skipping spawn of '{name}' — agent already registered"
+                )
+                return
+
             await _spawn_llm_agent(
                 agent_type, name, description, floor, bus, registry, renderer, settings, model_ov, max_tokens_ov
             )
@@ -564,6 +586,9 @@ async def _spawn_llm_agent(
         # Give every LLM agent access to the live URI→name registry
         if hasattr(agent, "set_name_registry"):
             agent.set_name_registry(floor._agents)
+        # Give orchestrator access to the live manifest registry for capability-aware prompts
+        if hasattr(agent, "set_manifest_registry"):
+            agent.set_manifest_registry(floor._manifests)
         floor.register_agent(agent.speaker_uri, agent.name)
         registry.register(agent)
         model_name = model_override or getattr(agent, "_model", "default")

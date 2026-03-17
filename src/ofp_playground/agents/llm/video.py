@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from openfloor import Envelope
+from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.base import BasePlaygroundAgent
 from ofp_playground.bus.message_bus import MessageBus
@@ -46,6 +46,23 @@ class VideoAgent(BasePlaygroundAgent):
         self._has_floor = False
         self._last_text: Optional[str] = None
         OUTPUT_DIR.mkdir(exist_ok=True)
+
+    def _build_manifest(self) -> Manifest:
+        return Manifest(
+            identification=Identification(
+                speakerUri=self._speaker_uri,
+                serviceUrl=self._service_url,
+                conversationalName=self._name,
+                role="Video generation agent",
+            ),
+            capabilities=[
+                Capability(
+                    keyphrases=["text-to-video", "video-generation"],
+                    descriptions=[self._style],
+                    supportedLayers=SupportedLayers(input=["text"], output=["video"]),
+                )
+            ],
+        )
 
     def _build_prompt(self, text: str) -> str:
         """Combine conversation text with the artist's style into a video prompt."""
@@ -119,6 +136,7 @@ class VideoAgent(BasePlaygroundAgent):
     async def run(self) -> None:
         self._running = True
         await self._bus.register(self.speaker_uri, self._queue)
+        await self._publish_manifest()
 
         try:
             while self._running:

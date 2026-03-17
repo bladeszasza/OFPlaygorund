@@ -207,6 +207,7 @@ RULES:
 - [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
 - [KICK] only if an agent is unresponsive or wrong type for the job.
 - [SPAWN] to add a specialist you need but don't have. Always include -type for non-text agents. IMMEDIATELY follow every [SPAWN] with an [ASSIGN NewAgentName]: directive on the next line — the agent needs a task the moment it joins.
+- NEVER [SPAWN] an agent whose name already appears in your team list above — assign to them instead.
 - [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
 - NEVER write story, creative, or prose content yourself. You only direct.
 """
@@ -242,6 +243,7 @@ class OrchestratorAgent(HuggingFaceAgent):
         )
         self._mission = mission
         self._stop_callback = stop_callback
+        self._manifest_registry: dict = {}
 
     _URI_TYPE_LABELS = {
         "image-": "image generation",
@@ -250,6 +252,10 @@ class OrchestratorAgent(HuggingFaceAgent):
         "multimodal-": "vision/multimodal",
         "llm-": "text",
     }
+
+    def set_manifest_registry(self, manifests: dict) -> None:
+        """Attach the shared URI→Manifest registry so capabilities appear in the system prompt."""
+        self._manifest_registry = manifests
 
     def _agent_type_label(self, uri: str) -> str:
         tail = uri.split(":")[-1]
@@ -263,7 +269,20 @@ class OrchestratorAgent(HuggingFaceAgent):
         for uri, name in self._name_registry.items():
             if uri == self.speaker_uri or "floor-manager" in uri:
                 continue
-            lines.append(f"- {name} ({self._agent_type_label(uri)})")
+            type_label = self._agent_type_label(uri)
+            manifest = self._manifest_registry.get(uri) if self._manifest_registry else None
+            if manifest:
+                caps = [kp for cap in (manifest.capabilities or []) for kp in (cap.keyphrases or [])]
+                role = (manifest.identification.role or "")[:80]
+                detail_parts = []
+                if caps:
+                    detail_parts.append(f"capabilities: {', '.join(caps)}")
+                if role:
+                    detail_parts.append(f"role: {role}")
+                detail = " | ".join(detail_parts)
+                lines.append(f"- {name} ({type_label}) — {detail}" if detail else f"- {name} ({type_label})")
+            else:
+                lines.append(f"- {name} ({type_label})")
         agent_list = "\n".join(lines) if lines else "- (agents joining...)"
         return ORCHESTRATOR_SYSTEM_PROMPT.format(
             name=self._name,

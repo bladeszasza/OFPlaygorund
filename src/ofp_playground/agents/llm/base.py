@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Optional
 
-from openfloor import Envelope
+from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.base import BasePlaygroundAgent
 from ofp_playground.bus.message_bus import MessageBus, FLOOR_MANAGER_URI
@@ -69,6 +69,28 @@ class BaseLLMAgent(BasePlaygroundAgent):
         self._consecutive_errors: int = 0
         self._name_registry: dict[str, str] = {}
         self._current_director_instruction: str = ""  # injected into system prompt at generation time
+
+    @property
+    def task_type(self) -> str:
+        """OFP task type keyphrase for this agent. Override in subclasses."""
+        return "text-generation"
+
+    def _build_manifest(self) -> Manifest:
+        return Manifest(
+            identification=Identification(
+                speakerUri=self._speaker_uri,
+                serviceUrl=self._service_url,
+                conversationalName=self._name,
+                role=self._synopsis,
+            ),
+            capabilities=[
+                Capability(
+                    keyphrases=[self.task_type],
+                    descriptions=[self._synopsis],
+                    supportedLayers=SupportedLayers(input=["text"], output=["text"]),
+                )
+            ],
+        )
 
     def set_name_registry(self, registry: dict[str, str]) -> None:
         """Attach the shared URI→name registry (floor._agents reference)."""
@@ -240,6 +262,7 @@ class BaseLLMAgent(BasePlaygroundAgent):
         """Main LLM agent loop."""
         self._running = True
         await self._bus.register(self.speaker_uri, self._queue)
+        await self._publish_manifest()
 
         try:
             while self._running:

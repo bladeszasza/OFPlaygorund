@@ -7,11 +7,16 @@ import uuid
 from typing import Optional
 
 from openfloor import (
+    Capability,
     Conversation,
     DialogEvent,
     Envelope,
+    Identification,
+    Manifest,
+    PublishManifestsEvent,
     RequestFloorEvent,
     Sender,
+    SupportedLayers,
     TextFeature,
     Token,
     UtteranceEvent,
@@ -159,6 +164,41 @@ class BasePlaygroundAgent:
         if envelope.sender:
             return envelope.sender.speakerUri or "unknown"
         return "unknown"
+
+    def _build_manifest(self) -> Manifest:
+        """Build an OFP manifest for this agent. Override in subclasses for richer info."""
+        return Manifest(
+            identification=Identification(
+                speakerUri=self._speaker_uri,
+                serviceUrl=self._service_url,
+                conversationalName=self._name,
+                role="AI agent",
+            ),
+            capabilities=[
+                Capability(
+                    keyphrases=["text-generation"],
+                    descriptions=[f"AI agent: {self._name}"],
+                    supportedLayers=SupportedLayers(input=["text"], output=["text"]),
+                )
+            ],
+        )
+
+    async def _publish_manifest(self) -> None:
+        """Send a publishManifests event so the floor manager and others can see capabilities."""
+        from openfloor import Parameters
+        manifest = self._build_manifest()
+        event = PublishManifestsEvent(
+            parameters=Parameters({
+                "servicingManifests": [dict(manifest)],
+                "discoveryManifests": [],
+            })
+        )
+        envelope = Envelope(
+            sender=self._make_sender(),
+            conversation=self._make_conversation(),
+            events=[event],
+        )
+        await self.send_envelope(envelope)
 
     async def run(self) -> None:
         """Main agent loop. Override in subclasses."""

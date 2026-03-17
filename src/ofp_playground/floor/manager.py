@@ -91,6 +91,7 @@ class FloorManager:
         self._manuscript: list[str] = []  # accumulated accepted chunks (showrunner_driven)
         self._last_worker_text: str = ""  # most recent non-orchestrator utterance text
         self._last_worker_name: str = ""  # speaker name for the above
+        self._manifests: dict[str, "Manifest"] = {}  # speakerUri → Manifest
 
     @property
     def speaker_uri(self) -> str:
@@ -146,7 +147,55 @@ class FloorManager:
 
     def unregister_agent(self, speaker_uri: str) -> None:
         self._agents.pop(speaker_uri, None)
+        self._manifests.pop(speaker_uri, None)
         self._policy.remove_from_rotation(speaker_uri)
+
+    def store_manifest(self, speaker_uri: str, manifest: Manifest) -> None:
+        """Store a manifest published by an agent."""
+        self._manifests[speaker_uri] = manifest
+
+    def find_agent_by_manifest(self, name: str, task_type: str) -> Optional[tuple[str, Manifest]]:
+        """Return (uri, manifest) of an existing agent that matches the spawn request.
+
+        Matching rules (in order):
+        1. Exact name match (conversationalName, case-insensitive) — definitive duplicate.
+        2. Same task-type keyphrase AND same output layer — capability already covered.
+
+        Returns None if no existing agent covers the requested role.
+        """
+        name_lower = name.lower()
+        task_lower = task_type.lower().replace("_", "-")
+
+        # Determine the output layer(s) implied by the requested task type
+        _task_output: dict[str, list[str]] = {
+            "text-to-image": ["image"],
+            "image-generation": ["image"],
+            "text-to-video": ["video"],
+            "video-generation": ["video"],
+            "text-to-audio": ["audio"],
+        }
+        requested_outputs = _task_output.get(task_lower, [])
+
+        name_match: Optional[tuple[str, Manifest]] = None
+        capability_match: Optional[tuple[str, Manifest]] = None
+
+        for uri, manifest in self._manifests.items():
+            ident = manifest.identification
+            # Rule 1: name match
+            if ident.conversationalName and ident.conversationalName.lower() == name_lower:
+                name_match = (uri, manifest)
+                break
+            # Rule 2: capability overlap (non-text output types only — text agents are intentionally diverse)
+            if requested_outputs:
+                for cap in (manifest.capabilities or []):
+                    layers = cap.supportedLayers
+                    if layers and any(o in (layers.output or []) for o in requested_outputs):
+                        # Also require the task type keyphrase to be present
+                        if any(task_lower in kp.lower() for kp in (cap.keyphrases or [])):
+                            capability_match = (uri, manifest)
+                            break
+
+        return name_match or capability_match
 
     def _make_sender(self) -> Sender:
         return Sender(
@@ -193,6 +242,20 @@ class FloorManager:
         )
         await self._send(envelope)
         self._policy.revoke_floor()
+
+    def _handle_publish_manifests(self, sender_uri: str, event) -> None:
+        """Store manifests published by agents joining the conversation."""
+        params = getattr(event, "parameters", None)
+        servicing = params.get("servicingManifests", []) if params is not None else []
+        for m in servicing:
+            try:
+                manifest = Manifest.from_dict(m) if isinstance(m, dict) else m
+                self.store_manifest(sender_uri, manifest)
+                name = manifest.identification.conversationalName or sender_uri
+                caps = [kp for cap in (manifest.capabilities or []) for kp in (cap.keyphrases or [])]
+                logger.debug("Manifest stored for %s: capabilities=%s", name, caps)
+            except Exception as e:
+                logger.warning("Failed to parse manifest from %s: %s", sender_uri, e)
 
     async def _handle_utterance(self, envelope: Envelope, event: UtteranceEvent) -> None:
         """Process an utterance: build typed Utterance, add to history, render."""
@@ -548,6 +611,8 @@ class FloorManager:
                 await self._handle_request_floor(envelope, event)
             elif event_type == "yieldFloor":
                 await self._handle_yield_floor(envelope)
+            elif event_type == "publishManifests":
+                self._handle_publish_manifests(sender_uri, event)
             elif event_type == "bye":
                 self.unregister_agent(sender_uri)
                 await self._bus.unregister(sender_uri)
