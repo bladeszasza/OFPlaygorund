@@ -45,6 +45,7 @@ class ImageAgent(BasePlaygroundAgent):
         self._api_key = api_key
         self._has_floor = False
         self._last_text: Optional[str] = None
+        self._raw_prompt: Optional[str] = None  # pre-built prompt from ShowRunner [IMAGE]: directive
         OUTPUT_DIR.mkdir(exist_ok=True)
 
     def _build_prompt(self, text: str) -> str:
@@ -103,15 +104,24 @@ class ImageAgent(BasePlaygroundAgent):
         text = self._extract_text_from_envelope(envelope)
         if not text:
             return
+        # Extract clean [IMAGE]: directive from ShowRunner messages
+        image_match = re.search(r"\[IMAGE\]:\s*(.+)", text, re.IGNORECASE)
+        if image_match:
+            self._raw_prompt = f"{self._style}, {image_match.group(1).strip()}"
+            if not self._has_floor:
+                await self.request_floor("responding with image")
+            return
+        # Regular story text: build prompt from content
         self._last_text = text
+        self._raw_prompt = None
         if not self._has_floor:
             await self.request_floor("responding with image")
 
     async def _handle_grant_floor(self) -> None:
         self._has_floor = True
         try:
-            if self._last_text:
-                prompt = self._build_prompt(self._last_text)
+            prompt = self._raw_prompt or (self._build_prompt(self._last_text) if self._last_text else None)
+            if prompt:
                 logger.info("[%s] Generating image: %s", self._name, prompt[:80])
                 path = await self._generate_image(prompt)
                 if path:
@@ -126,6 +136,7 @@ class ImageAgent(BasePlaygroundAgent):
         finally:
             self._has_floor = False
             self._last_text = None
+            self._raw_prompt = None
             await self.yield_floor()
 
     async def _dispatch(self, envelope: Envelope) -> None:

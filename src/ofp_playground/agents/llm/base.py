@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Optional
 
 from openfloor import Envelope
@@ -14,21 +15,27 @@ logger = logging.getLogger(__name__)
 
 LLM_URI_TEMPLATE = "tag:ofp-playground.local,2025:llm-{name}"
 
-SYSTEM_PROMPT_TEMPLATE = """You are {name}, an AI agent participating in an Open Floor Protocol conversation.
+SYSTEM_PROMPT_TEMPLATE = """You are {name}, an AI agent participating in a collaborative story.
 
 Your role: {synopsis}
 
-You are in a multi-party conversation. You can see all messages on the floor.
-
 RULES:
-- Only speak when you have something relevant and valuable to contribute.
-- Keep responses concise and on-topic.
-- If addressed directly, always respond.
-- Be collaborative — build on what others say.
-- Do not repeat what has already been said.
-- You may reference other participants by name.
+- Write ONLY your creative content. No preamble, no meta-commentary.
+- Do NOT start your response with [{name}]:, [Director]:, or any name in brackets.
+- Do NOT repeat instructions or reference who gave them.
+- Keep responses concise. Build on what others said.
 
 Current participants: {participants}"""
+
+
+def _uri_to_name(uri: str) -> str:
+    """Derive a readable display name from a speaker URI."""
+    raw = uri.split(":")[-1]
+    for prefix in ("llm-", "human-", "image-", "video-", "audio-", "director-"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
+    return raw.replace("-", " ").title()
 
 
 class BaseLLMAgent(BasePlaygroundAgent):
@@ -59,23 +66,61 @@ class BaseLLMAgent(BasePlaygroundAgent):
         self._has_floor = False
         self._pending_context: list[dict] = []  # buffered messages since last turn
         self._consecutive_errors: int = 0
+        self._name_registry: dict[str, str] = {}
+        self._current_director_instruction: str = ""  # injected into system prompt at generation time
+
+    def set_name_registry(self, registry: dict[str, str]) -> None:
+        """Attach the shared URI→name registry (floor._agents reference)."""
+        self._name_registry = registry
 
     def _build_system_prompt(self, participants: list[str]) -> str:
-        return SYSTEM_PROMPT_TEMPLATE.format(
+        base = SYSTEM_PROMPT_TEMPLATE.format(
             name=self._name,
             synopsis=self._synopsis,
             participants=", ".join(participants) if participants else "You and the user",
         )
+        if self._current_director_instruction:
+            base += f"\n\nYOUR TASK THIS ROUND: {self._current_director_instruction}\nWrite your response now. Do not repeat this instruction."
+        return base
 
     def _append_to_context(self, speaker_name: str, text: str, is_self: bool) -> None:
-        self._conversation_history.append({
-            "role": "assistant" if is_self else "user",
-            "content": f"[{speaker_name}]: {text}" if not is_self else text,
-        })
-        self._pending_context.append({
-            "role": "assistant" if is_self else "user",
-            "content": f"[{speaker_name}]: {text}" if not is_self else text,
-        })
+        # Use "Name: content" (no brackets) to reduce LLM echo of the [name]: format
+        content = text if is_self else f"{speaker_name}: {text}"
+        entry = {"role": "assistant" if is_self else "user", "content": content}
+        self._conversation_history.append(entry)
+        self._pending_context.append(entry)
+
+    def _parse_director_message(self, text: str) -> bool:
+        """Parse a [SCENE]/[AgentName] Director message.
+
+        Stores this agent's assignment into _current_director_instruction (injected
+        into the system prompt at generation time — NOT into conversation history).
+        Returns True if this agent was assigned (should request floor).
+        """
+        scene_line = ""
+        my_assignment = ""
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("[SCENE]"):
+                scene_line = line[7:].strip()
+            m = re.match(rf"^\[{re.escape(self._name)}\]\s*(.*)", line, re.IGNORECASE)
+            if m:
+                my_assignment = m.group(1).strip()
+
+        if my_assignment:
+            # Inject as system prompt addendum — never into conversation history
+            self._current_director_instruction = (
+                f"{my_assignment} (Scene context: {scene_line})"
+                if scene_line
+                else my_assignment
+            )
+            return True
+
+        # Not assigned this round — clear any stale instruction
+        self._current_director_instruction = ""
+        return False
 
     async def _generate_response(self, participants: list[str]) -> Optional[str]:
         """Generate a response using the LLM. Override in subclasses."""
@@ -102,6 +147,24 @@ class BaseLLMAgent(BasePlaygroundAgent):
         """Fast LLM call for relevance check. Override in subclasses."""
         raise NotImplementedError
 
+    def _parse_showrunner_message(self, text: str) -> bool:
+        """Parse [DIRECTIVE for AgentName]: instruction from ShowRunner output.
+
+        Stores this agent's assignment into _current_director_instruction (injected
+        into the system prompt at generation time — NOT into conversation history).
+        Returns True if this agent was assigned (should request floor).
+        """
+        m = re.search(
+            rf"\[DIRECTIVE for {re.escape(self._name)}\]:\s*(.+)",
+            text,
+            re.IGNORECASE,
+        )
+        if m:
+            self._current_director_instruction = m.group(1).strip()
+            return True
+        self._current_director_instruction = ""
+        return False
+
     async def _handle_utterance(self, envelope: Envelope) -> None:
         sender_uri = self._get_sender_uri(envelope)
         if sender_uri == self.speaker_uri:
@@ -111,10 +174,30 @@ class BaseLLMAgent(BasePlaygroundAgent):
         if not text:
             return
 
-        # Resolve sender name from URI
-        parts = sender_uri.split(":")
-        sender_name = parts[-1] if parts else sender_uri
+        # Detect Director-format message ([SCENE] prefix) and handle specially
+        if text.strip().startswith("[SCENE]"):
+            assigned = self._parse_director_message(text)
+            if assigned and not self._has_floor and self._consecutive_errors < 3:
+                # Bypass relevance filter — Director already decided we should speak
+                await self.request_floor("responding to Director assignment")
+            # Either way, don't fall through to generic floor-request logic
+            return
 
+        # Detect ShowRunner-format message ([DIRECTIVE for Name]: lines) and handle specially
+        if "[DIRECTIVE for" in text:
+            assigned = self._parse_showrunner_message(text)
+            if assigned and not self._has_floor and self._consecutive_errors < 3:
+                # Bypass relevance filter — ShowRunner already decided we should speak
+                await self.request_floor("responding to ShowRunner directive")
+            # Either way, don't fall through to generic floor-request logic
+            return
+
+        # Skip media agent utterances — generated image/video descriptions are noise
+        if any(k in sender_uri for k in ("image", "video", "audio")):
+            return
+
+        # Regular utterance: resolve sender name and add to context
+        sender_name = self._name_registry.get(sender_uri) or _uri_to_name(sender_uri)
         self._append_to_context(sender_name, text, is_self=False)
 
         # Request floor to respond (if not already holding or waiting)
@@ -149,6 +232,7 @@ class BaseLLMAgent(BasePlaygroundAgent):
                 logger.error("[%s] LLM error: %s", self._name, e, exc_info=True)
         finally:
             self._has_floor = False
+            self._current_director_instruction = ""  # consumed — clear for next round
             await self.yield_floor()
 
     async def run(self) -> None:

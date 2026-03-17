@@ -83,6 +83,8 @@ class FloorManager:
         self._stop_event = asyncio.Event()
         self._round_count = 0
         self._agents_spoken_this_round: set[str] = set()
+        self._director_uri: Optional[str] = None
+        self._showrunner_uri: Optional[str] = None
 
     @property
     def speaker_uri(self) -> str:
@@ -107,6 +109,19 @@ class FloorManager:
     @property
     def floor_holder(self) -> Optional[str]:
         return self._policy.current_holder
+
+    def register_director(self, speaker_uri: str) -> None:
+        """Mark an agent as the narrative director (gets floor at round boundaries)."""
+        self._director_uri = speaker_uri
+
+    def register_showrunner(self, speaker_uri: str) -> None:
+        """Mark an agent as the show runner (gets floor at round boundaries, after story agents)."""
+        self._showrunner_uri = speaker_uri
+
+    async def grant_to(self, speaker_uri: str) -> None:
+        """Directly grant floor to a specific agent, bypassing the request queue."""
+        self._policy.grant_to(speaker_uri)
+        await self._grant_floor(speaker_uri)
 
     def register_agent(self, speaker_uri: str, name: str) -> None:
         """Register a local agent with the floor manager."""
@@ -198,17 +213,33 @@ class FloorManager:
 
         self._history.add(utterance)
 
-        # Track round completion for sequential director notes
+        # Track round completion
         if sender_uri != self.speaker_uri:
             self._agents_spoken_this_round.add(sender_uri)
             text_agents = {
                 uri for uri in self._agents
                 if "image" not in uri and "video" not in uri and "audio" not in uri
+                and uri != self._showrunner_uri
             }
             if text_agents and text_agents.issubset(self._agents_spoken_this_round):
                 self._round_count += 1
                 self._agents_spoken_this_round.clear()
-                await self._inject_round_summary()
+                if self._showrunner_uri:
+                    # ShowRunner speaks last — synthesizes round and directs next
+                    await self.grant_to(self._showrunner_uri)
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"Round {self._round_count} complete — ShowRunner has the floor"
+                        )
+                elif self._director_uri:
+                    # Director speaks first next round
+                    await self.grant_to(self._director_uri)
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"Round {self._round_count} complete — Director has the floor"
+                        )
+                else:
+                    await self._inject_round_summary()
 
         # Display (bus already delivered the envelope to all other agents)
         if self._renderer:

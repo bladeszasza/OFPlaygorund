@@ -258,6 +258,11 @@ async def _run_session(
                     human._has_floor = False
                     await human.yield_floor()
                     await human.request_floor()
+                # Director gets the floor first — but only when ShowRunner is not present
+                # (ShowRunner speaks last, so Director directs before story agents respond)
+                if floor._director_uri and not floor._showrunner_uri:
+                    await asyncio.sleep(0.2)  # let topic envelope reach all agent queues
+                    await floor.grant_to(floor._director_uri)
             if max_turns:
                 # Poll history and stop when turn count is reached
                 while floor.history.__len__() < max_turns:
@@ -462,6 +467,20 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or DEFAULT_SUMMARIZER_MODEL,
             )
+        elif task == "showrunner":
+            from ofp_playground.agents.llm.showrunner import ShowRunnerAgent
+            from ofp_playground.agents.llm.director import parse_total_parts
+            total_parts = parse_total_parts(description)
+            agent = ShowRunnerAgent(
+                name=name,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_huggingface,
+                stop_callback=floor.stop,
+                total_parts=total_parts,
+            )
+            floor.register_showrunner(agent.speaker_uri)
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
@@ -475,6 +494,24 @@ async def _spawn_llm_agent(
                 relevance_filter=settings.defaults.relevance_filter,
             )
 
+    elif agent_type in ("director", "director-hf"):
+        api_key = settings.get_huggingface_key()
+        if not api_key:
+            api_key = click.prompt(f"Enter HuggingFace API key for {name}", hide_input=True)
+        from ofp_playground.agents.llm.director import DirectorAgent, parse_total_parts
+        total_parts = parse_total_parts(description)
+        agent = DirectorAgent(
+            name=name,
+            story_outline=description,
+            total_parts=total_parts,
+            bus=bus,
+            conversation_id=floor.conversation_id,
+            api_key=api_key,
+            model=model_override or settings.defaults.llm_model_huggingface,
+            stop_callback=floor.stop,
+        )
+        floor.register_director(agent.speaker_uri)
+
     else:
         renderer.show_system_event(
             f"Unknown agent type: {agent_type}. Use: anthropic, openai, google, hf"
@@ -485,6 +522,9 @@ async def _spawn_llm_agent(
         return
 
     if agent:
+        # Give every LLM agent access to the live URI→name registry
+        if hasattr(agent, "set_name_registry"):
+            agent.set_name_registry(floor._agents)
         floor.register_agent(agent.speaker_uri, agent.name)
         registry.register(agent)
         model_name = model_override or getattr(agent, "_model", "default")
@@ -749,6 +789,10 @@ def agents():
         "    Token-Classification     — extract named entities (default: bert-multilingual-ner)\n"
         "    Summarization            — periodically summarize the conversation (default: bart-large-cnn)\n"
         "\n"
+        "  [cyan]director[/cyan]            — Narrative director (HF LLM, speaks first each round)\n"
+        "                             -system carries the story outline; '6 PARTS ...' sets part count\n"
+        "  [cyan]hf -type ShowRunner[/cyan] — Show runner (HF LLM, speaks last each round; synthesizes + directs)\n"
+        "                             -system carries the story outline; '6 PARTS ...' sets part count\n"
         "  [cyan]human[/cyan]               — Human participant (stdin/stdout)\n"
         "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP"
     )
