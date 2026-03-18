@@ -164,7 +164,7 @@ Use `-type Text-to-Video` in the flag format:
 
 ## Remote OFP Agents
 
-Connect any live OFP-compatible HTTP endpoint with `--remote`. The agent will participate in the conversation using floor protocol. (https://openfloor.dev/agent-registry)[https://openfloor.dev/agent-registry]
+Connect any live OFP-compatible HTTP endpoint with `--remote`. The agent will participate in the conversation using floor protocol. [agent-registry](https://openfloor.dev/agent-registry)
 
 ```bash
 ofp-playground start --no-human \
