@@ -60,7 +60,7 @@ Keys are also read from `~/.ofp-playground/config.toml` under `[api_keys]`.
 ### Interactive session (human + one AI agent)
 
 ```bash
-ofp-playground start --agent hf:Assistant:You are a helpful assistant.
+ofp-playground start --agent "hf:Assistant:You are a helpful assistant."
 ```
 
 ### Two AI agents debating (no human)
@@ -86,9 +86,9 @@ type:name[:description[:model]]
 ```
 
 ```bash
---agent hf:Alice:You are a marine biologist.
---agent hf:Bob:You are a skeptical physicist.:meta-llama/Llama-3.1-8B-Instruct
---agent anthropic:Claude:You are a helpful assistant.:claude-haiku-4-5-20251001
+--agent "hf:Alice:You are a marine biologist."
+--agent "hf:Bob:You are a skeptical physicist.:meta-llama/Llama-3.1-8B-Instruct"
+--agent "anthropic:Claude:You are a helpful assistant.:claude-haiku-4-5-20251001"
 ```
 
 ### Flag format
