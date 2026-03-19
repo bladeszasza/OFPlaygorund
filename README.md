@@ -12,7 +12,7 @@ A CLI tool for running multi-party AI conversations using the [Open Floor Protoc
 - **Open Floor Protocol** — structured turn-taking with floor request/grant/yield mechanics
 - **Four floor policies** — sequential, round-robin, moderated, free-for-all
 - **Four LLM providers** — Anthropic Claude, OpenAI GPT, Google Gemini, HuggingFace Inference API
-- **Text-to-image agents** — HuggingFace image generation models join conversations as visual artists
+- **Text-to-image agents** — HuggingFace and OpenAI image generation models join conversations as visual artists
 - **Text-to-video agents** — HuggingFace video generation models produce clips from conversation context
 - **Remote OFP agents** — connect any live OFP-compatible HTTP endpoint with `--remote`
 - **Autonomous mode** — run agent-only debates with `--no-human --topic`
@@ -113,9 +113,10 @@ type:name[:description[:model]]
 --agent "-provider hf -name Bob -system You are a skeptical physicist. -model meta-llama/Llama-3.1-8B-Instruct"
 --agent "-provider anthropic -name Claude -system You are a helpful assistant."
 --agent "-provider hf -type Text-to-Image -name Flux -system photorealistic photography, dramatic lighting -model black-forest-labs/FLUX.1-dev"
+--agent "-provider openai -type Text-to-Image -name Canvas -system cinematic concept art, volumetric light -model gpt-image-1.5"
 ```
 
-The `-type` flag maps to HuggingFace task names (e.g. `Text-to-Image`, `Text-Generation`). Defaults to `Text-Generation` when omitted.
+The `-type` flag maps to provider task names (e.g. `Text-to-Image`, `Text-Generation`). Defaults to `Text-Generation` when omitted.
 
 ---
 
@@ -124,7 +125,7 @@ The `-type` flag maps to HuggingFace task names (e.g. `Text-to-Image`, `Text-Gen
 | Type alias | Provider | Default model | Env var |
 |---|---|---|---|
 | `anthropic` / `claude` | Anthropic | `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
-| `openai` / `gpt` | OpenAI | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| `openai` / `gpt` | OpenAI | `gpt-5.4-nano` | `OPENAI_API_KEY` |
 | `google` / `gemini` | Google | `gemini-2.0-flash-lite` | `GOOGLE_API_KEY` |
 | `huggingface` / `hf` | HuggingFace Inference API | `MiniMaxAI/MiniMax-M2.5` | `HF_API_KEY` |
 
@@ -141,7 +142,7 @@ Default models are conservative built-in defaults. Override per-agent with the `
 
 ### Text-to-Image Agents
 
-Image agents listen to the conversation, build a prompt from the latest utterance combined with their style description, generate an image via HuggingFace Inference API, and report the saved file path back to the conversation.
+Image agents listen to the conversation, build a prompt from the latest utterance combined with their style description, generate an image via the provider image API, and report the saved file path back to the conversation.
 
 Images are saved to `./ofp-images/TIMESTAMP_name.png`.
 
@@ -149,11 +150,21 @@ Use `-type Text-to-Image` in the flag format:
 
 ```bash
 --agent "-provider hf -type Text-to-Image -name Flux -system photorealistic photography, dramatic lighting, urban -model black-forest-labs/FLUX.1-dev"
+--agent "-provider openai -type Text-to-Image -name Canvas -system cinematic concept art, volumetric light -model gpt-image-1.5"
 ```
 
-**Confirmed working text-to-image models:**
+**Confirmed working HuggingFace text-to-image models:**
 - `black-forest-labs/FLUX.1-dev` — photorealistic, high quality, slower
 - `Tongyi-MAI/Z-Image-Turbo` — fast, anime/illustration style
+
+**Supported OpenAI text-to-image models:**
+- `gpt-image-1.5-2025-12-16` — default pinned snapshot
+- `gpt-image-1.5` — latest GPT Image 1.5 alias
+- `gpt-image-1` — previous GPT Image model
+- `gpt-image-1-mini` — cheaper GPT Image model
+- `chatgpt-image-latest` — image model currently used in ChatGPT
+
+Deprecated DALL-E models are rejected on the OpenAI text-to-image path.
 
 ### Text-to-Video Agents
 
@@ -333,6 +344,7 @@ src/ofp_playground/
 │       ├── base.py         # BaseLLMAgent (context, relevance filter)
 │       ├── anthropic.py    # Anthropic Claude
 │       ├── openai.py       # OpenAI GPT
+│       ├── openai_image.py # OpenAI text-to-image
 │       ├── google.py       # Google Gemini
 │       ├── huggingface.py  # HuggingFace text-generation
 │       ├── image.py        # HuggingFace text-to-image

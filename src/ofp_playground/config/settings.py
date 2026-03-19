@@ -35,7 +35,9 @@ class ApiKeysConfig:
 @dataclass
 class DefaultsConfig:
     llm_model_anthropic: str = "claude-haiku-4-5-20251001"          # smallest Claude
-    llm_model_openai: str = "gpt-4o-mini"                           # smallest GPT
+    llm_model_openai: str = "gpt-5.4-nano"                          # smallest GPT-5.4
+    image_model_openai: str = "gpt-4o"                               # model used with image_generation tool
+    vision_model_openai: str = "gpt-4o-mini"                        # OpenAI vision (image-to-text)
     llm_model_google: str = "gemini-2.0-flash-lite"                 # smallest Gemini
     llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.5"           # stronger default for HF debates
     relevance_filter: bool = True
@@ -100,6 +102,8 @@ class Settings:
             "defaults": {
                 "llm_model_anthropic": self.defaults.llm_model_anthropic,
                 "llm_model_openai": self.defaults.llm_model_openai,
+                "image_model_openai": self.defaults.image_model_openai,
+                "vision_model_openai": self.defaults.vision_model_openai,
                 "llm_model_google": self.defaults.llm_model_google,
                 "relevance_filter": self.defaults.relevance_filter,
             },

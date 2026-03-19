@@ -102,18 +102,35 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
             raise click.BadParameter(f"Missing -name in agent spec: {spec}")
         return agent_type, name, description, model_override, max_tokens_override, timeout_override, max_retries_override
 
-    # Colon-separated format
-    parts = spec.split(":", 3)
+    # Colon-separated format.
+    # Supports both:
+    #   type:name[:description[:model]]              e.g. openai:Artbot:painter
+    #   type:subtype:name[:description[:model]]      e.g. openai:text-to-image:Artbot:painter
+    TASK_SUBTYPES = {
+        "text-to-image", "image-to-text", "text-to-video", "text-generation",
+        "image-text-to-text", "image-classification", "object-detection",
+        "image-segmentation", "token-classification", "text-classification",
+        "summarization", "showrunner",
+    }
+    parts = spec.split(":", 4)  # up to 5 parts to accommodate type:subtype:name:desc:model
     if len(parts) < 2:
         raise click.BadParameter(
             f"Invalid agent spec: '{spec}'. "
             f"Use 'type:name[:description[:model]]' or "
+            f"'type:subtype:name[:description[:model]]' or "
             f"'-provider TYPE -name NAME [-system DESC] [-model MODEL]'"
         )
-    agent_type = parts[0].lower()
-    name = parts[1]
-    description = parts[2] if len(parts) > 2 else f"I am {name}, an AI assistant."
-    model_override = parts[3] if len(parts) > 3 else None
+    # Detect type:subtype:name:... format
+    if len(parts) >= 3 and parts[1].lower() in TASK_SUBTYPES:
+        agent_type = f"{parts[0]}:{parts[1]}".lower()
+        name = parts[2]
+        description = parts[3] if len(parts) > 3 else f"I am {name}, an AI assistant."
+        model_override = parts[4] if len(parts) > 4 else None
+    else:
+        agent_type = parts[0].lower()
+        name = parts[1]
+        description = parts[2] if len(parts) > 2 else f"I am {name}, an AI assistant."
+        model_override = parts[3] if len(parts) > 3 else None
     return agent_type, name, description, model_override, None, None, 0
 
 
@@ -367,20 +384,49 @@ async def _spawn_llm_agent(
             relevance_filter=settings.defaults.relevance_filter,
         )
 
-    elif agent_type in ("openai", "gpt"):
+    elif agent_type in ("openai", "gpt") or agent_type.startswith(("openai:", "gpt:")):
         api_key = settings.get_openai_key()
         if not api_key:
             api_key = click.prompt(f"Enter OpenAI API key for {name}", hide_input=True)
-        from ofp_playground.agents.llm.openai import OpenAIAgent
-        agent = OpenAIAgent(
-            name=name,
-            synopsis=description,
-            bus=bus,
-            conversation_id=floor.conversation_id,
-            api_key=api_key,
-            model=model_override or settings.defaults.llm_model_openai,
-            relevance_filter=settings.defaults.relevance_filter,
-        )
+
+        task = agent_type.split(":", 1)[1] if ":" in agent_type else "text-generation"
+
+        if task == "text-generation":
+            from ofp_playground.agents.llm.openai import OpenAIAgent
+            agent = OpenAIAgent(
+                name=name,
+                synopsis=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_openai,
+                relevance_filter=settings.defaults.relevance_filter,
+            )
+        elif task == "text-to-image":
+            from ofp_playground.agents.llm.openai_image import OpenAIImageAgent
+            agent = OpenAIImageAgent(
+                name=name,
+                style=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.image_model_openai,
+            )
+        elif task == "image-to-text":
+            from ofp_playground.agents.llm.openai_image import OpenAIVisionAgent
+            agent = OpenAIVisionAgent(
+                name=name,
+                synopsis=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.vision_model_openai,
+            )
+        else:
+            renderer.show_system_event(
+                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, or image-to-text."
+            )
+            return
 
     elif agent_type in ("google", "gemini"):
         api_key = settings.get_google_key()
@@ -850,9 +896,15 @@ def agents():
         "[bold]Available agent types:[/bold]\n"
         "  [cyan]anthropic[/cyan] / claude  — Anthropic Claude (requires ANTHROPIC_API_KEY)\n"
         "  [cyan]openai[/cyan] / gpt        — OpenAI GPT (requires OPENAI_API_KEY)\n"
+        "                             -type Text-to-Image uses OpenAI image models\n"
         "  [cyan]google[/cyan] / gemini     — Google Gemini (requires GOOGLE_API_KEY)\n"
         "  [cyan]hf[/cyan] / huggingface    — HuggingFace Inference API (requires HF_API_KEY)\n"
         "                             -type defaults to Text-Generation\n"
+        "\n"
+        "  [bold]OpenAI generative tasks (-type):[/bold]\n"
+        "    Text-Generation          — chat/text LLM (default: gpt-5.4-nano)\n"
+        "    Text-to-Image            — generate images via Responses API (default: gpt-4o)\n"
+        "    Image-to-Text            — analyze images via vision (default: gpt-4o-mini)\n"
         "\n"
         "  [bold]HF generative tasks (-type):[/bold]\n"
         "    Text-Generation          — chat/text LLM (default)\n"
