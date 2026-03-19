@@ -3,6 +3,7 @@ from .openai import OpenAIAgent
 from .openai_image import OpenAIImageAgent, OpenAIVisionAgent
 from .google import GoogleAgent
 from .google_image import GeminiImageAgent, GeminiVisionAgent
+from .google_music import GeminiMusicAgent
 from .huggingface import HuggingFaceAgent
 from .multimodal import MultimodalAgent
 from .classifier import ImageClassificationAgent
@@ -21,6 +22,7 @@ __all__ = [
     "GoogleAgent",
     "GeminiImageAgent",
     "GeminiVisionAgent",
+    "GeminiMusicAgent",
     "HuggingFaceAgent",
     "MultimodalAgent",
     "ImageClassificationAgent",

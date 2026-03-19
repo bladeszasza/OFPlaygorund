@@ -41,6 +41,7 @@ class DefaultsConfig:
     llm_model_google: str = "gemini-3.1-flash-lite-preview"          # default Gemini text model
     image_model_google: str = "gemini-3.1-flash-image-preview"      # Gemini image generation (Nano Banana)
     vision_model_google: str = "gemini-3-flash-preview"              # Gemini vision (image-to-text)
+    music_model_google: str = "models/lyria-realtime-exp"            # Lyria RealTime music generation
     llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.5"           # stronger default for HF debates
     relevance_filter: bool = True
 
@@ -109,6 +110,7 @@ class Settings:
                 "llm_model_google": self.defaults.llm_model_google,
                 "image_model_google": self.defaults.image_model_google,
                 "vision_model_google": self.defaults.vision_model_google,
+                "music_model_google": self.defaults.music_model_google,
                 "relevance_filter": self.defaults.relevance_filter,
             },
         }

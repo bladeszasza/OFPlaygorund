@@ -107,7 +107,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
     #   type:name[:description[:model]]              e.g. openai:Artbot:painter
     #   type:subtype:name[:description[:model]]      e.g. openai:text-to-image:Artbot:painter
     TASK_SUBTYPES = {
-        "text-to-image", "image-to-text", "text-to-video", "text-generation",
+        "text-to-image", "image-to-text", "text-to-video", "text-generation", "text-to-music",
         "image-text-to-text", "image-classification", "object-detection",
         "image-segmentation", "token-classification", "text-classification",
         "summarization", "showrunner",
@@ -466,9 +466,19 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or settings.defaults.vision_model_google,
             )
+        elif task == "text-to-music":
+            from ofp_playground.agents.llm.google_music import GeminiMusicAgent
+            agent = GeminiMusicAgent(
+                name=name,
+                style=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.music_model_google,
+            )
         else:
             renderer.show_system_event(
-                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, or image-to-text."
+                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, or text-to-music."
             )
             return
 
@@ -939,6 +949,7 @@ def agents():
         "    Text-Generation          — chat/text LLM (default: gemini-3.1-flash-lite-preview)\n"
         "    Text-to-Image            — generate images via Nano Banana (default: gemini-3.1-flash-image-preview)\n"
         "    Image-to-Text            — analyze images via Gemini vision (default: gemini-3-flash-preview)\n"
+        "    Text-to-Music            — generate music via Lyria RealTime (default: lyria-realtime-exp)\n"
         "\n"
         "  [bold]HF generative tasks (-type):[/bold]\n"
         "    Text-Generation          — chat/text LLM (default)\n"
