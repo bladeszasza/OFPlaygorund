@@ -84,16 +84,27 @@ class GeminiMusicAgent(BasePlaygroundAgent):
             clean = " ".join(words[:40])
         return f"{self._style}, {clean}" if self._style else clean
 
+    @staticmethod
+    def _make_ssl_context():
+        """Return an SSL context using certifi's CA bundle (fixes macOS cert issues)."""
+        import ssl
+        try:
+            import certifi
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            return ssl.create_default_context()
+
     async def _do_generate_music(self, prompt: str) -> Optional[Path]:
         from google import genai
         from google.genai import types
 
+        ssl_ctx = self._make_ssl_context()
         client = genai.Client(api_key=self._api_key, http_options={"api_version": "v1alpha"})
         target_bytes = self._duration_seconds * SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
         audio_chunks: list[bytes] = []
         total_bytes = 0
 
-        async with client.aio.live.music.connect(model=self._model) as session:
+        async with client.aio.live.music.connect(model=self._model, ssl=ssl_ctx) as session:
             await session.set_weighted_prompts(
                 prompts=[types.WeightedPrompt(text=prompt, weight=1.0)]
             )
@@ -132,7 +143,16 @@ class GeminiMusicAgent(BasePlaygroundAgent):
             logger.error("[%s] Lyria music generation timed out", self._name)
             return None
         except Exception as e:
-            logger.error("[%s] Lyria music generation error: %s", self._name, e)
+            err = str(e)
+            if "CERTIFICATE_VERIFY_FAILED" in err or "SSL" in err:
+                logger.error(
+                    "[%s] SSL certificate error — fix with: "
+                    "/Applications/Python*/Install\\ Certificates.command  "
+                    "or: pip install certifi",
+                    self._name,
+                )
+            else:
+                logger.error("[%s] Lyria music generation error: %s", self._name, e)
             return None
 
     async def _handle_utterance(self, envelope: Envelope) -> None:
