@@ -7,7 +7,10 @@ from typing import Callable, Optional
 from openfloor import Envelope
 
 from ofp_playground.agents.llm.base import _uri_to_name
+from ofp_playground.agents.llm.anthropic import AnthropicAgent
+from ofp_playground.agents.llm.google import GoogleAgent
 from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
+from ofp_playground.agents.llm.openai import OpenAIAgent
 from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
@@ -142,9 +145,10 @@ class ShowRunnerAgent(HuggingFaceAgent):
 
 
 # ============================================================
-# OrchestratorAgent — for SHOWRUNNER_DRIVEN floor policy
+# Orchestrator agents — for SHOWRUNNER_DRIVEN floor policy
 # ============================================================
 
+# Legacy free-text spawn syntax — kept for reference and as fallback documentation.
 ORCHESTRATOR_SYSTEM_PROMPT = """You are {name}, an intelligent project manager orchestrating a team of AI agents.
 
 Your team:
@@ -177,25 +181,8 @@ SPAWN AGENT TYPES — use -type to select the right specialist:
     [SPAWN -provider hf -name Filmmaker -type Text-to-Video -system <style description>]
       default model: Wan-AI/Wan2.2-TI2V-5B
 
-  Vision / multimodal (analyzes images and text together):
-    [SPAWN -provider hf -name Analyst -type Image-Text-to-Text -system <prompt>]
-      default model: Qwen/Qwen3.5-35B-A3B
-
-  Image classification (labels what is in an image):
-    [SPAWN -provider hf -name Classifier -type Image-Classification -system <prompt>]
-      default model: google/vit-base-patch16-224
-
-  Object detection (finds and locates objects in images):
-    [SPAWN -provider hf -name Detector -type Object-Detection -system <prompt>]
-      default model: facebook/detr-resnet-50
-
-  OCR / image-to-text (extracts text from images):
-    [SPAWN -provider hf -name Transcriber -type Image-to-Text -system <prompt>]
-      default model: stepfun-ai/GOT-OCR2_0
-
-  Text summarization:
-    [SPAWN -provider hf -name Summarizer -type Summarization -system <prompt>]
-      default model: facebook/bart-large-cnn
+  Music generation (Google Lyria):
+    [SPAWN -provider google -name Composer -type Text-to-Music -system <style description>]
 
 You may omit -model to use the default for that type.
 
@@ -203,47 +190,56 @@ RULES:
 - On your FIRST turn: analyze the mission, silently plan your task list, then issue [ASSIGN] to the first agent.
 - After each agent speaks: evaluate their output, then issue [ACCEPT] followed by the next [ASSIGN], OR issue [REJECT AgentName]: reason.
 - Assign to EXACTLY ONE agent at a time. Never assign multiple simultaneously.
-- [ASSIGN] must name a concrete deliverable — "Write 2 paragraphs introducing Gerald discovering pigeons, dry British tone, 80 words" not "write the intro".
+- [ASSIGN] must name a concrete deliverable.
 - [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
 - [KICK] only if an agent is unresponsive or wrong type for the job.
-- [SPAWN] to add a specialist you need but don't have. Always include -type for non-text agents. IMMEDIATELY follow every [SPAWN] with an [ASSIGN NewAgentName]: directive on the next line — the agent needs a task the moment it joins.
+- [SPAWN] to add a specialist you need but don't have. IMMEDIATELY follow every [SPAWN] with an [ASSIGN NewAgentName] directive.
 - NEVER [SPAWN] an agent whose name already appears in your team list above — assign to them instead.
 - [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
 - NEVER write story, creative, or prose content yourself. You only direct.
 """
 
+# System prompt for tool-calling orchestrators — all four providers use this.
+TOOL_ORCHESTRATOR_SYSTEM_PROMPT = """You are {name}, an intelligent project manager orchestrating a team of AI agents.
 
-class OrchestratorAgent(HuggingFaceAgent):
-    """Intelligent project manager for the SHOWRUNNER_DRIVEN floor policy.
+Your team:
+{agent_list}
 
-    Speaks first (floor granted by FloorManager at session start) and is
-    automatically re-granted the floor after every worker agent utterance.
-    Emits structured directives that FloorManager parses and executes.
-    Never self-requests the floor.
+YOUR MISSION: {mission}
+
+You will receive the conversation topic on your first turn. On every subsequent turn you will see the latest output from your assigned agent.
+
+To add a new specialist, call one of the spawn_* tools — each tool requires an initial_task so the agent gets work the moment it joins. Do not write [SPAWN ...] text yourself.
+
+For all other control, respond ONLY with structured directives — one per line, no preamble, no commentary:
+
+    [ASSIGN AgentName]: <concrete task, max 25 words>
+    [ACCEPT]
+    [REJECT AgentName]: <reason for revision, max 20 words>
+    [KICK AgentName]
+    [TASK_COMPLETE]
+
+RULES:
+- On your FIRST turn: analyze the mission, silently plan your task list, then spawn or assign the first agent.
+- After each agent speaks: evaluate their output, then issue [ACCEPT] followed by the next [ASSIGN], OR issue [REJECT AgentName]: reason.
+- Assign to EXACTLY ONE agent at a time. Never assign multiple simultaneously.
+- [ASSIGN] must name a concrete deliverable — "Write 2 paragraphs introducing Gerald discovering pigeons, dry British tone, 80 words" not "write the intro".
+- [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
+- [KICK] only if an agent is unresponsive or wrong type for the job.
+- NEVER spawn an agent whose name already appears in your team list above — assign to them instead.
+- [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
+- NEVER write story, creative, or prose content yourself. You only direct.
+"""
+
+
+class _OrchestratorBase:
+    """Mixin providing shared orchestration logic for all provider orchestrators.
+
+    Must be listed BEFORE the provider base class in the MRO so its methods
+    override BaseLLMAgent defaults:
+
+        class MyOrchestrator(_OrchestratorBase, MyProviderAgent): ...
     """
-
-    def __init__(
-        self,
-        name: str,
-        mission: str,
-        bus: MessageBus,
-        conversation_id: str,
-        api_key: str,
-        model: str,
-        stop_callback: Optional[Callable] = None,
-    ) -> None:
-        super().__init__(
-            name=name,
-            synopsis="Orchestrator — manages agents via structured directives.",
-            bus=bus,
-            conversation_id=conversation_id,
-            api_key=api_key,
-            model=model,
-            relevance_filter=False,
-        )
-        self._mission = mission
-        self._stop_callback = stop_callback
-        self._manifest_registry: dict = {}
 
     _URI_TYPE_LABELS = {
         "image-": "image generation",
@@ -254,7 +250,6 @@ class OrchestratorAgent(HuggingFaceAgent):
     }
 
     def set_manifest_registry(self, manifests: dict) -> None:
-        """Attach the shared URI→Manifest registry so capabilities appear in the system prompt."""
         self._manifest_registry = manifests
 
     def _agent_type_label(self, uri: str) -> str:
@@ -264,13 +259,13 @@ class OrchestratorAgent(HuggingFaceAgent):
                 return label
         return "text"
 
-    def _build_system_prompt(self, participants: list[str]) -> str:
+    def _build_agent_list(self) -> str:
         lines = []
         for uri, name in self._name_registry.items():
             if uri == self.speaker_uri or "floor-manager" in uri:
                 continue
             type_label = self._agent_type_label(uri)
-            manifest = self._manifest_registry.get(uri) if self._manifest_registry else None
+            manifest = getattr(self, "_manifest_registry", {}).get(uri)
             if manifest:
                 caps = [kp for cap in (manifest.capabilities or []) for kp in (cap.keyphrases or [])]
                 role = (manifest.identification.role or "")[:80]
@@ -283,14 +278,16 @@ class OrchestratorAgent(HuggingFaceAgent):
                 lines.append(f"- {name} ({type_label}) — {detail}" if detail else f"- {name} ({type_label})")
             else:
                 lines.append(f"- {name} ({type_label})")
-        agent_list = "\n".join(lines) if lines else "- (agents joining...)"
-        return ORCHESTRATOR_SYSTEM_PROMPT.format(
+        return "\n".join(lines) if lines else "- (agents joining...)"
+
+    def _build_system_prompt(self, participants: list[str]) -> str:
+        return TOOL_ORCHESTRATOR_SYSTEM_PROMPT.format(
             name=self._name,
-            agent_list=agent_list,
+            agent_list=self._build_agent_list(),
             mission=self._mission,
         )
 
-    async def _handle_utterance(self, envelope: Envelope) -> None:
+    async def _handle_utterance(self, envelope: "Envelope") -> None:
         """Record worker output into context. Never request floor — FloorManager grants it reactively."""
         sender_uri = self._get_sender_uri(envelope)
         if sender_uri == self.speaker_uri:
@@ -320,3 +317,318 @@ class OrchestratorAgent(HuggingFaceAgent):
         finally:
             self._has_floor = False
             await self.yield_floor()
+
+
+class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
+    """Intelligent project manager for SHOWRUNNER_DRIVEN (HuggingFace-backed).
+
+    Uses HuggingFace chat completions with tool calling when spawn tools
+    are available, falling back gracefully when none are configured.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        mission: str,
+        bus: MessageBus,
+        conversation_id: str,
+        api_key: str,
+        model: str,
+        stop_callback: Optional[Callable] = None,
+        settings=None,
+    ) -> None:
+        super().__init__(
+            name=name,
+            synopsis="Orchestrator — manages agents via structured directives.",
+            bus=bus,
+            conversation_id=conversation_id,
+            api_key=api_key,
+            model=model,
+            relevance_filter=False,
+        )
+        self._mission = mission
+        self._stop_callback = stop_callback
+        self._manifest_registry: dict = {}
+        self._settings = settings
+
+    async def _generate_response(self, participants: list[str]) -> Optional[str]:
+        import asyncio
+        import json
+        loop = asyncio.get_event_loop()
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_hf_tools, tool_use_to_directives
+
+        system = self._build_system_prompt([])
+        messages = [{"role": "system", "content": system}] + list(self._conversation_history[-20:])
+        if len(messages) == 1:
+            messages.append({"role": "user", "content": "Begin your mission."})
+
+        # Prepend /no_think to suppress chain-of-thought on reasoning models
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i]["role"] == "user":
+                messages[i] = {**messages[i], "content": "/no_think\n" + messages[i]["content"]}
+                break
+
+        spawn_tools = build_spawn_tools(self._settings) if self._settings else []
+        hf_tools = to_hf_tools(spawn_tools) if spawn_tools else None
+
+        def _call():
+            client = self._get_client()
+            kwargs: dict = {
+                "model": self._model,
+                "max_tokens": self._max_tokens,
+                "messages": messages,
+            }
+            if hf_tools:
+                kwargs["tools"] = hf_tools
+                kwargs["tool_choice"] = "auto"
+            return client.chat.completions.create(**kwargs)
+
+        response = await loop.run_in_executor(None, _call)
+
+        choice = response.choices[0].message
+        text_parts: list[str] = []
+        if choice.tool_calls:
+            for tc in choice.tool_calls:
+                args = json.loads(tc.function.arguments)
+                directive = tool_use_to_directives(tc.function.name, args)
+                if directive:
+                    text_parts.insert(0, directive)
+        if choice.content:
+            cleaned = self._clean(choice.content)
+            if cleaned:
+                text_parts.append(cleaned)
+
+        return "\n".join(text_parts) or None
+
+
+class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
+    """Intelligent project manager backed by Anthropic Claude.
+
+    Uses Anthropic native tool calling for spawning agents.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        mission: str,
+        bus: MessageBus,
+        conversation_id: str,
+        api_key: str,
+        model: str,
+        stop_callback: Optional[Callable] = None,
+        settings=None,
+    ) -> None:
+        super().__init__(
+            name=name,
+            synopsis="Orchestrator — manages agents via structured directives.",
+            bus=bus,
+            conversation_id=conversation_id,
+            api_key=api_key,
+            model=model,
+            relevance_filter=False,
+        )
+        self._mission = mission
+        self._stop_callback = stop_callback
+        self._manifest_registry: dict = {}
+        self._settings = settings
+
+    async def _generate_response(self, participants: list[str]) -> Optional[str]:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, tool_use_to_directives
+
+        client = self._get_client()
+        system = self._build_system_prompt([])
+        messages = list(self._conversation_history[-20:])
+        if not messages:
+            messages = [{"role": "user", "content": "Begin your mission."}]
+
+        spawn_tools = build_spawn_tools(self._settings) if self._settings else []
+        kwargs: dict = {
+            "model": self._model,
+            "max_tokens": 1000,
+            "system": system,
+            "messages": messages,
+        }
+        if spawn_tools:
+            kwargs["tools"] = spawn_tools
+            kwargs["tool_choice"] = {"type": "auto"}
+
+        def _call():
+            return client.messages.create(**kwargs)
+
+        response = await loop.run_in_executor(None, _call)
+
+        text_parts: list[str] = []
+        for block in response.content:
+            if block.type == "text":
+                text = block.text.strip()
+                if text:
+                    text_parts.append(text)
+            elif block.type == "tool_use":
+                directive = tool_use_to_directives(block.name, block.input)
+                if directive:
+                    text_parts.insert(0, directive)
+
+        return "\n".join(text_parts) or None
+
+
+class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
+    """Intelligent project manager backed by OpenAI.
+
+    Uses OpenAI Responses API function calling for spawning agents.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        mission: str,
+        bus: MessageBus,
+        conversation_id: str,
+        api_key: str,
+        model: str,
+        stop_callback: Optional[Callable] = None,
+        settings=None,
+    ) -> None:
+        super().__init__(
+            name=name,
+            synopsis="Orchestrator — manages agents via structured directives.",
+            bus=bus,
+            conversation_id=conversation_id,
+            api_key=api_key,
+            model=model,
+            relevance_filter=False,
+        )
+        self._mission = mission
+        self._stop_callback = stop_callback
+        self._manifest_registry: dict = {}
+        self._settings = settings
+
+    async def _generate_response(self, participants: list[str]) -> Optional[str]:
+        import asyncio
+        import json
+        loop = asyncio.get_event_loop()
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_openai_tools, tool_use_to_directives
+
+        client = self._get_client()
+        system = self._build_system_prompt([])
+        history = list(self._conversation_history[-20:])
+        if not history:
+            history = [{"role": "user", "content": "Begin your mission."}]
+
+        spawn_tools = build_spawn_tools(self._settings) if self._settings else []
+        openai_tools = to_openai_tools(spawn_tools) if spawn_tools else None
+
+        def _call():
+            kwargs: dict = {
+                "model": self._model,
+                "instructions": system,
+                "input": history,
+                "max_output_tokens": 1000,
+            }
+            if openai_tools:
+                kwargs["tools"] = openai_tools
+                kwargs["tool_choice"] = "auto"
+            return client.responses.create(**kwargs)
+
+        response = await loop.run_in_executor(None, _call)
+
+        text_parts: list[str] = []
+        for item in response.output:
+            if item.type == "function_call":
+                args = json.loads(item.arguments)
+                directive = tool_use_to_directives(item.name, args)
+                if directive:
+                    text_parts.insert(0, directive)
+            elif item.type == "message":
+                for content_block in item.content:
+                    if hasattr(content_block, "text") and content_block.text:
+                        text_parts.append(content_block.text.strip())
+
+        return "\n".join(text_parts) or None
+
+
+class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
+    """Intelligent project manager backed by Google Gemini.
+
+    Uses Gemini function declarations for spawning agents.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        mission: str,
+        bus: MessageBus,
+        conversation_id: str,
+        api_key: str,
+        model: str,
+        stop_callback: Optional[Callable] = None,
+        settings=None,
+    ) -> None:
+        super().__init__(
+            name=name,
+            synopsis="Orchestrator — manages agents via structured directives.",
+            bus=bus,
+            conversation_id=conversation_id,
+            api_key=api_key,
+            model=model,
+            relevance_filter=False,
+        )
+        self._mission = mission
+        self._stop_callback = stop_callback
+        self._manifest_registry: dict = {}
+        self._settings = settings
+
+    async def _generate_response(self, participants: list[str]) -> Optional[str]:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        from google import genai
+        from google.genai import types
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_google_tools, tool_use_to_directives
+
+        system = self._build_system_prompt([])
+        history = list(self._conversation_history[-20:])
+        if not history:
+            history = [{"role": "user", "content": "Begin your mission."}]
+
+        contents = [
+            types.Content(
+                parts=[types.Part(text=msg["content"])],
+                role="model" if msg["role"] == "assistant" else "user",
+            )
+            for msg in history
+        ]
+
+        spawn_tools = build_spawn_tools(self._settings) if self._settings else []
+        google_tools = to_google_tools(spawn_tools) if spawn_tools else None
+
+        def _call():
+            client = genai.Client(api_key=self._api_key)
+            config_kwargs: dict = {
+                "system_instruction": system,
+                "max_output_tokens": 1000,
+            }
+            if google_tools:
+                config_kwargs["tools"] = google_tools
+            config = types.GenerateContentConfig(**config_kwargs)
+            return client.models.generate_content(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+
+        response = await loop.run_in_executor(None, _call)
+
+        text_parts: list[str] = []
+        for candidate in (response.candidates or []):
+            for part in (candidate.content.parts or []):
+                if hasattr(part, "function_call") and part.function_call:
+                    fc = part.function_call
+                    args = dict(fc.args)
+                    directive = tool_use_to_directives(fc.name, args)
+                    if directive:
+                        text_parts.insert(0, directive)
+                elif hasattr(part, "text") and part.text:
+                    text_parts.append(part.text.strip())
+
+        return "\n".join(text_parts) or None

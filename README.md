@@ -1,6 +1,6 @@
 # OFPlayground
 
-A CLI tool for running multi-party AI conversations using the [Open Floor Protocol (OFP)](https://github.com/open-voice-interoperability/openfloor-python). Spawn local LLM agents from multiple providers, pick a floor policy, and watch them talk — or build cross-provider pipelines where one agent's output becomes another's input.
+A CLI tool for running multi-party AI conversations using the [Open Floor Protocol (OFP)](https://github.com/open-voice-interoperability/openfloor-python). Spawn agents from any provider, pick a floor policy, and watch them collaborate — or build autonomous pipelines where one agent's output feeds the next.
 
 **GitHub:** https://github.com/bladeszasza/OFPlayground
 
@@ -9,11 +9,13 @@ A CLI tool for running multi-party AI conversations using the [Open Floor Protoc
 ## Features
 
 - **Multi-agent conversations** — mix human input with LLM agents from multiple providers
-- **Open Floor Protocol** — structured turn-taking with floor request/grant/yield mechanics
+- **Open Floor Protocol** — structured turn-taking with floor request / grant / yield mechanics (OFP-compliant invite/uninvite flow for spawned agents)
 - **Five floor policies** — sequential, round-robin, moderated, free-for-all, showrunner-driven
 - **Four LLM providers** — Anthropic Claude, OpenAI GPT, Google Gemini, HuggingFace Inference API
-- **Multi-modal agents** — text, image generation, image analysis (vision), music generation, and video
+- **Multi-modal agents** — text, image generation, image analysis (vision), music, and video
 - **Cross-provider pipelines** — chain agents across providers (Claude narrates → Google paints → Claude sees → Google scores)
+- **Orchestrator agents** — any provider can run as an intelligent project manager that dynamically spawns, assigns, and directs specialist agents; uses native tool calling so the LLM can never hallucinate invalid spawn parameters
+- **Registry-driven tool calling** — orchestrator spawn tools are built from configured API keys at runtime; only available providers appear as options
 - **Remote OFP agents** — connect any live OFP-compatible HTTP endpoint with `--remote`
 - **Autonomous mode** — agent-only sessions with `--no-human --topic`
 - **Dynamic agent management** — `/spawn` and `/kick` agents mid-conversation
@@ -86,8 +88,8 @@ Two equivalent formats can be mixed freely.
 ### Colon format
 
 ```
-type:name[:description[:model]]
-type:subtype:name[:description[:model]]
+provider:name[:description[:model]]
+provider:subtype:name[:description[:model]]
 ```
 
 ```bash
@@ -106,6 +108,7 @@ type:subtype:name[:description[:model]]
 
 ```
 -provider TYPE -name NAME [-type TASK] [-system DESCRIPTION] [-model MODEL]
+[-timeout SECONDS] [-max-retries N] [-max-tokens N]
 ```
 
 ```bash
@@ -125,12 +128,11 @@ type:subtype:name[:description[:model]]
 |---|---|---|
 | `anthropic` / `claude` | `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 
-| Task (`-type`) | Agent | Default model |
-|---|---|---|
-| `Text-Generation` *(default)* | `AnthropicAgent` | `claude-haiku-4-5-20251001` |
-| `Image-to-Text` | `AnthropicVisionAgent` | `claude-haiku-4-5-20251001` |
-
-All Claude models support image input. Override with `claude-sonnet-4-6` or `claude-opus-4-6` for higher quality.
+| Task (`-type`) | Notes |
+|---|---|
+| `Text-Generation` *(default)* | Standard chat/text |
+| `Image-to-Text` | Vision — analyze images via Claude |
+| `Orchestrator` | Intelligent project manager (see below) |
 
 ### OpenAI GPT
 
@@ -138,13 +140,12 @@ All Claude models support image input. Override with `claude-sonnet-4-6` or `cla
 |---|---|---|
 | `openai` / `gpt` | `gpt-5.4-nano` | `OPENAI_API_KEY` |
 
-| Task (`-type`) | Agent | Default model |
-|---|---|---|
-| `Text-Generation` *(default)* | `OpenAIAgent` | `gpt-5.4-nano` |
-| `Text-to-Image` | `OpenAIImageAgent` | `gpt-4o` |
-| `Image-to-Text` | `OpenAIVisionAgent` | `gpt-4o-mini` |
-
-Image generation uses the [OpenAI Responses API](https://platform.openai.com/docs/guides/images) with the `image_generation` tool. Images are saved to `./ofp-images/`.
+| Task (`-type`) | Notes |
+|---|---|
+| `Text-Generation` *(default)* | Standard chat/text |
+| `Text-to-Image` | Images via Responses API `image_generation` tool |
+| `Image-to-Text` | Vision analysis |
+| `Orchestrator` | Intelligent project manager |
 
 ### Google Gemini
 
@@ -152,15 +153,13 @@ Image generation uses the [OpenAI Responses API](https://platform.openai.com/doc
 |---|---|---|
 | `google` / `gemini` | `gemini-3.1-flash-lite-preview` | `GOOGLE_API_KEY` |
 
-| Task (`-type`) | Agent | Default model |
+| Task (`-type`) | Default model | Notes |
 |---|---|---|
-| `Text-Generation` *(default)* | `GoogleAgent` | `gemini-3.1-flash-lite-preview` |
-| `Text-to-Image` | `GeminiImageAgent` | `gemini-3.1-flash-image-preview` |
-| `Image-to-Text` | `GeminiVisionAgent` | `gemini-3-flash-preview` |
-| `Text-to-Music` | `GeminiMusicAgent` | `lyria-realtime-exp` |
-
-- Image generation uses [Nano Banana](https://ai.google.dev/gemini-api/docs/image-generation) (`gemini-3.1-flash-image-preview`). Automatically falls back to `gemini-2.5-flash-image` on 503. Images saved to `./ofp-images/`.
-- Music generation uses [Lyria RealTime](https://deepmind.google/technologies/lyria/realtime/) via WebSocket streaming. Produces 15-second WAV files saved to `./ofp-music/`.
+| `Text-Generation` *(default)* | `gemini-3.1-flash-lite-preview` | Standard chat/text |
+| `Text-to-Image` | `gemini-3.1-flash-image-preview` | Nano Banana image generation |
+| `Image-to-Text` | `gemini-3-flash-preview` | Vision analysis |
+| `Text-to-Music` | `lyria-realtime-exp` | Lyria RealTime — 15s WAV → `./ofp-music/` |
+| `Orchestrator` | `gemini-3.1-flash-lite-preview` | Intelligent project manager |
 
 ### HuggingFace Inference API
 
@@ -168,40 +167,89 @@ Image generation uses the [OpenAI Responses API](https://platform.openai.com/doc
 |---|---|---|
 | `hf` / `huggingface` | `MiniMaxAI/MiniMax-M2.5` | `HF_API_KEY` |
 
-| Task (`-type`) | Agent | Notes |
-|---|---|---|
-| `Text-Generation` *(default)* | `HuggingFaceAgent` | Any HF text-gen model |
-| `Text-to-Image` | `ImageAgent` | Default: `FLUX.1-dev` |
-| `Text-to-Video` | `VideoAgent` | Default: `Wan2.2-TI2V-5B` |
-| `Image-Text-to-Text` | `MultimodalAgent` | Default: `Qwen2.5-VL-7B` |
-| `Image-Classification` | `ImageClassificationAgent` | |
-| `Object-Detection` | `ObjectDetectionAgent` | |
-| `Image-Segmentation` | `ImageSegmentationAgent` | |
-| `Image-to-Text` | `OCRAgent` | |
-| `Text-Classification` | `TextClassificationAgent` | |
-| `Token-Classification` | `NERAgent` | |
-| `Summarization` | `SummarizationAgent` | |
-
-**Confirmed working HuggingFace text-generation models:**
-- `MiniMaxAI/MiniMax-M2.5` — strong default, debate-style conversations
-- `meta-llama/Llama-3.2-1B-Instruct` — fastest, lightweight
-- `meta-llama/Llama-4-Scout-17B-16E-Instruct` — good reasoning
-- `Qwen/Qwen3-235B-A22B` — large MoE
-- `deepseek-ai/DeepSeek-V3-0324` — strong reasoning, strips `<think>` blocks
+| Task (`-type`) | Notes |
+|---|---|
+| `Text-Generation` *(default)* | Any HF text-gen model |
+| `Text-to-Image` | Default: `FLUX.1-dev` — images → `./ofp-images/` |
+| `Text-to-Video` | Default: `Wan2.2-TI2V-5B` — clips → `./ofp-videos/` |
+| `Image-Text-to-Text` | Default: `Qwen2.5-VL-7B` |
+| `Image-Classification` | Label images |
+| `Object-Detection` | Detect and count objects |
+| `Image-Segmentation` | Segment image regions |
+| `Image-to-Text` | OCR / read text from images |
+| `Text-Classification` | Sentiment classification |
+| `Token-Classification` | Named entity recognition |
+| `Summarization` | Periodic conversation summarization |
+| `Orchestrator` | Intelligent project manager |
 
 ---
 
-## Cross-Provider Floors
+## Orchestrator (Showrunner-Driven Policy)
 
-Agents from different providers can feed each other's output. A common pattern:
+Any provider can act as an intelligent orchestrator. The orchestrator speaks first, assigns tasks to worker agents, evaluates output, and can spawn new specialists on demand.
 
-**text → image → vision → music**
+### Supported directives
+
+| Directive | Action |
+|---|---|
+| `[ASSIGN AgentName]: task` | Grant floor to the named agent with a concrete task |
+| `[ACCEPT]` | Accept the last output; move to the next step |
+| `[REJECT AgentName]: reason` | Re-grant floor with revision feedback |
+| `[KICK AgentName]` | Remove an unresponsive or unsuitable agent |
+| `[TASK_COMPLETE]` | Signal that the mission is complete |
+
+Spawning a new agent is done via **native tool calling** (not free-text): the orchestrator calls `spawn_text_agent`, `spawn_image_agent`, `spawn_video_agent`, or `spawn_music_agent`. Tool definitions are generated at startup from the API keys that are actually present — the LLM can't select a provider that isn't configured.
+
+### Usage
+
+```bash
+# Anthropic orchestrator (Claude Sonnet)
+ofp-playground start \
+  --no-human \
+  --policy showrunner_driven \
+  --topic "Write a short mystery story with 3 chapters." \
+  --agent "-provider anthropic \
+           -type orchestrator \
+           -name Director \
+           -model claude-sonnet-4-6 \
+           -system Write a short mystery story with 3 chapters."
+
+# OpenAI orchestrator
+ofp-playground start \
+  --no-human \
+  --policy showrunner_driven \
+  --topic "Create a product launch campaign with copy and imagery." \
+  --agent "-provider openai -type orchestrator -name PM -system Your mission."
+
+# Google orchestrator
+ofp-playground start \
+  --no-human \
+  --policy showrunner_driven \
+  --topic "..." \
+  --agent "-provider google -type orchestrator -name Director -system ..."
+
+# HuggingFace orchestrator
+ofp-playground start \
+  --no-human \
+  --policy showrunner_driven \
+  --topic "..." \
+  --agent "-provider hf -type orchestrator -name Director -model MiniMaxAI/MiniMax-M2.5 -system ..."
+```
+
+The orchestrator starts alone — it will spawn whatever specialist agents it needs.
+
+---
+
+## Cross-Provider Pipelines
+
+Agents from different providers can feed each other's output. A typical pattern:
 
 ```
-Claude narrates → Google paints → Claude analyses the painting → Google scores it
+text → image → vision → music
+Claude narrates → Google paints → Claude analyses → Google scores
 ```
 
-Ready-made example scripts are in `examples/`:
+Ready-made scripts are in `examples/`:
 
 ```bash
 # Full Google floor (Gemini text + image + vision + Lyria music)
@@ -209,6 +257,12 @@ Ready-made example scripts are in `examples/`:
 
 # Cross-provider floor (Claude text + Google image + Claude vision + Google music)
 ./examples/claude_floor.sh "a lone lighthouse keeper watching a storm roll in"
+
+# Anthropic orchestrator driving a romantic comedy novella with 80s skate culture
+./examples/run_orchestrator.sh
+
+# Full romantic comedy with pre-configured HF workers
+./examples/romanticomedy.sh
 ```
 
 ---
@@ -229,7 +283,7 @@ ofp-playground start --no-human \
 |------|-----|-------------|
 | Talker | `https://bladeszasza-talker.hf.space/ofp` | Qwen3-0.6B conversational agent |
 | Parrot | `https://parrot-agent.openfloor.dev/` | Echoes everything back |
-| Wikipedia | `https://yahandhjjf.us-east-1.awsapprunner.com/` | Encyclopedic research via Wikipedia |
+| Wikipedia | `https://yahandhjjf.us-east-1.awsapprunner.com/` | Encyclopedic research |
 
 ---
 
@@ -325,16 +379,32 @@ ofp-playground start --no-human --policy sequential --max-turns 8 \
   --topic "A lone lighthouse keeper watches a storm roll in from the sea"
 ```
 
-### 8-Agent debate
+### Autonomous multi-agent debate
 
 ```bash
 ofp-playground start --no-human \
-  --topic "Skateboarding on streets VS in the park: which is better?" \
-  --max-turns 10 \
+  --topic "Skateboarding on streets vs in the park: which is better?" \
+  --max-turns 12 \
   --policy round_robin \
   --agent "-provider hf -name StreetSkater -system You are a passionate street skater who loves urban spots." \
   --agent "-provider hf -name ParkSkater -system You are a competitive park skater who trains at skate parks." \
   --agent "-provider anthropic -name Referee -system You moderate the debate impartially and summarize key points."
+```
+
+### Orchestrator with pre-configured workers
+
+```bash
+ofp-playground start \
+  --no-human \
+  --policy showrunner_driven \
+  --topic "Create a short illustrated story about a robot learning to paint." \
+  --agent "-provider anthropic \
+           -type orchestrator \
+           -name Director \
+           -model claude-sonnet-4-6 \
+           -system Create a short illustrated story about a robot learning to paint." \
+  --agent "-provider hf -name Writer -system You write vivid, emotional short fiction. Write EXACTLY what the Director assigns." \
+  --agent "-provider hf -type Text-to-Image -name Painter -system painterly illustration style, warm colors"
 ```
 
 ---
@@ -347,7 +417,7 @@ src/ofp_playground/
 ├── config/settings.py          # Settings + API key resolution
 ├── bus/message_bus.py          # Async in-process message bus
 ├── floor/
-│   ├── manager.py              # Floor coordinator
+│   ├── manager.py              # Floor coordinator + OFP invite/uninvite
 │   ├── policy.py               # Floor policies
 │   └── history.py              # Conversation history
 ├── agents/
@@ -367,11 +437,15 @@ src/ofp_playground/
 │       ├── huggingface.py      # HuggingFace (text)
 │       ├── image.py            # HuggingFace (text-to-image)
 │       ├── video.py            # HuggingFace (text-to-video)
+│       ├── showrunner.py       # All provider orchestrators + ShowRunnerAgent
+│       ├── spawn_tools.py      # Registry-driven tool definitions for spawning
 │       └── ...                 # HF perception agents
 └── renderer/
     ├── terminal.py             # Rich terminal output
     └── gradio_ui.py            # Gradio web UI
 examples/
+├── run_orchestrator.sh         # Anthropic orchestrator — 80s skate romantic comedy
+├── romanticomedy.sh            # HF orchestrator with full worker lineup
 ├── google_floor.sh             # Full Google multi-modal floor
 └── claude_floor.sh             # Cross-provider Claude + Google floor
 ```

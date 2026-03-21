@@ -110,7 +110,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         "text-to-image", "image-to-text", "text-to-video", "text-generation", "text-to-music",
         "image-text-to-text", "image-classification", "object-detection",
         "image-segmentation", "token-classification", "text-classification",
-        "summarization", "showrunner",
+        "summarization", "showrunner", "orchestrator",
     }
     parts = spec.split(":", 4)  # up to 5 parts to accommodate type:subtype:name:desc:model
     if len(parts) < 2:
@@ -397,9 +397,22 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or settings.defaults.vision_model_anthropic,
             )
+        elif task == "orchestrator":
+            from ofp_playground.agents.llm.showrunner import AnthropicOrchestratorAgent
+            agent = AnthropicOrchestratorAgent(
+                name=name,
+                mission=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_anthropic,
+                stop_callback=floor.stop,
+                settings=settings,
+            )
+            floor.register_orchestrator(agent.speaker_uri)
         else:
             renderer.show_system_event(
-                f"Unknown Anthropic task: {task}. Use anthropic for text-generation or image-to-text."
+                f"Unknown Anthropic task: {task}. Use anthropic for text-generation, image-to-text, or orchestrator."
             )
             return
 
@@ -441,9 +454,22 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or settings.defaults.vision_model_openai,
             )
+        elif task == "orchestrator":
+            from ofp_playground.agents.llm.showrunner import OpenAIOrchestratorAgent
+            agent = OpenAIOrchestratorAgent(
+                name=name,
+                mission=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_openai,
+                stop_callback=floor.stop,
+                settings=settings,
+            )
+            floor.register_orchestrator(agent.speaker_uri)
         else:
             renderer.show_system_event(
-                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, or image-to-text."
+                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, image-to-text, or orchestrator."
             )
             return
 
@@ -495,9 +521,22 @@ async def _spawn_llm_agent(
                 api_key=api_key,
                 model=model_override or settings.defaults.music_model_google,
             )
+        elif task == "orchestrator":
+            from ofp_playground.agents.llm.showrunner import GoogleOrchestratorAgent
+            agent = GoogleOrchestratorAgent(
+                name=name,
+                mission=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_google,
+                stop_callback=floor.stop,
+                settings=settings,
+            )
+            floor.register_orchestrator(agent.speaker_uri)
         else:
             renderer.show_system_event(
-                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, or text-to-music."
+                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, text-to-music, or orchestrator."
             )
             return
 
@@ -640,6 +679,19 @@ async def _spawn_llm_agent(
                 total_parts=total_parts,
             )
             floor.register_showrunner(agent.speaker_uri)
+        elif task == "orchestrator":
+            from ofp_playground.agents.llm.showrunner import OrchestratorAgent
+            agent = OrchestratorAgent(
+                name=name,
+                mission=description,
+                bus=bus,
+                conversation_id=floor.conversation_id,
+                api_key=api_key,
+                model=model_override or settings.defaults.llm_model_huggingface,
+                stop_callback=floor.stop,
+                settings=settings,
+            )
+            floor.register_orchestrator(agent.speaker_uri)
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
@@ -653,22 +705,6 @@ async def _spawn_llm_agent(
                 relevance_filter=settings.defaults.relevance_filter,
                 max_tokens=max_tokens_override or 500,
             )
-
-    elif agent_type in ("orchestrator",):
-        api_key = settings.get_huggingface_key()
-        if not api_key:
-            api_key = click.prompt(f"Enter HuggingFace API key for {name}", hide_input=True)
-        from ofp_playground.agents.llm.showrunner import OrchestratorAgent
-        agent = OrchestratorAgent(
-            name=name,
-            mission=description,
-            bus=bus,
-            conversation_id=floor.conversation_id,
-            api_key=api_key,
-            model=model_override or settings.defaults.llm_model_huggingface,
-            stop_callback=floor.stop,
-        )
-        floor.register_orchestrator(agent.speaker_uri)
 
     elif agent_type in ("director", "director-hf"):
         api_key = settings.get_huggingface_key()
