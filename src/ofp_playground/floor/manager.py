@@ -435,6 +435,8 @@ class FloorManager:
         """
         import re
 
+        assigned_in_batch = False  # guard: only one [ASSIGN] per directive batch
+
         for line in text.splitlines():
             line = line.strip()
             if not line:
@@ -445,15 +447,25 @@ class FloorManager:
             if m:
                 target_name = m.group(1).strip()
                 task = m.group(2).strip()
+                if assigned_in_batch:
+                    logger.debug(
+                        "Orchestrator [ASSIGN]: skipping duplicate assignment to '%s' in same batch",
+                        target_name,
+                    )
+                    continue
                 target_uri = self._resolve_agent_uri_by_name(target_name)
                 if target_uri:
+                    assigned_in_batch = True
                     # Track who is assigned so _handle_request_floor can filter others
                     self._assigned_uri = target_uri
                     # Flush any stale queue entries from agents that saw the orchestrator utterance
                     self._policy._request_queue.clear()
-                    # Build directive, injecting manuscript context if any has been accepted
+                    # Build directive, injecting manuscript context for local LLM agents only.
+                    # Remote agents receive the raw task — they don't maintain narrative context
+                    # and echoing the full manuscript confuses their endpoint logic.
                     directive = f"[DIRECTIVE for {target_name}]: {task}"
-                    if self._manuscript:
+                    is_remote = "remote-" in target_uri
+                    if self._manuscript and not is_remote:
                         manuscript_text = "\n\n".join(self._manuscript)
                         directive += (
                             f"\n\n--- STORY SO FAR ({sum(len(c.split()) for c in self._manuscript)} words) ---\n"
@@ -544,6 +556,20 @@ class FloorManager:
                             self._renderer.show_system_event(f"[Orchestrator] Spawn failed: {e}")
                 else:
                     logger.warning("Orchestrator [SPAWN]: no spawn_callback registered")
+                continue
+
+            # [SKIP AgentName]: reason  — record skip in manuscript, return floor to orchestrator
+            m = re.match(r"\[SKIP\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            if m:
+                target_name = m.group(1).strip()
+                reason = m.group(2).strip()
+                self._manuscript.append(f"[skipped {target_name}]: {reason}")
+                self._last_worker_text = ""
+                self._assigned_uri = None
+                if self._renderer:
+                    self._renderer.show_system_event(
+                        f"[Orchestrator] Skipped {target_name}: {reason[:80]}"
+                    )
                 continue
 
             # [TASK_COMPLETE]

@@ -164,6 +164,7 @@ Respond ONLY with structured directives — one per line, no preamble, no commen
     [ACCEPT]
     [REJECT AgentName]: <reason for revision, max 20 words>
     [KICK AgentName]
+    [SKIP AgentName]: <reason — note why task was skipped>
     [SPAWN -provider <provider> -name <Name> -type <type> -system <system prompt> -model <model-id>]
     [TASK_COMPLETE]
 
@@ -191,8 +192,12 @@ RULES:
 - After each agent speaks: evaluate their output, then issue [ACCEPT] followed by the next [ASSIGN], OR issue [REJECT AgentName]: reason.
 - Assign to EXACTLY ONE agent at a time. Never assign multiple simultaneously.
 - [ASSIGN] must name a concrete deliverable.
-- [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
-- [KICK] only if an agent is unresponsive or wrong type for the job.
+- RESILIENCE — when an agent fails to deliver:
+    1st failure: [REJECT AgentName]: clearer instructions (rephrase the task concisely).
+    2nd failure: [KICK AgentName] then [SPAWN -provider <different-provider> -name <NewName>] and immediately [ASSIGN NewName]: same task with clearer wording.
+    3rd failure (new agent also fails): [SKIP OriginalAgentName]: could not complete — <brief reason>. Move on.
+- [KICK] only if an agent is unresponsive or persistently wrong type for the job.
+- [SKIP] records the task as skipped in the manuscript so the final output is still complete.
 - [SPAWN] to add a specialist you need but don't have. IMMEDIATELY follow every [SPAWN] with an [ASSIGN NewAgentName] directive.
 - NEVER [SPAWN] an agent whose name already appears in your team list above — assign to them instead.
 - [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
@@ -217,6 +222,7 @@ For all other control, respond ONLY with structured directives — one per line,
     [ACCEPT]
     [REJECT AgentName]: <reason for revision, max 20 words>
     [KICK AgentName]
+    [SKIP AgentName]: <reason — note why task was skipped>
     [TASK_COMPLETE]
 
 RULES:
@@ -224,8 +230,12 @@ RULES:
 - After each agent speaks: evaluate their output, then issue [ACCEPT] followed by the next [ASSIGN], OR issue [REJECT AgentName]: reason.
 - Assign to EXACTLY ONE agent at a time. Never assign multiple simultaneously.
 - [ASSIGN] must name a concrete deliverable — "Write 2 paragraphs introducing Gerald discovering pigeons, dry British tone, 80 words" not "write the intro".
-- [REJECT] re-grants that agent's floor with feedback. Use sparingly — max 2 rejections per agent per task.
-- [KICK] only if an agent is unresponsive or wrong type for the job.
+- RESILIENCE — when an agent fails to deliver:
+    1st failure: [REJECT AgentName]: clearer instructions (rephrase the task concisely).
+    2nd failure: use a spawn tool to create a replacement with a different provider, then [ASSIGN NewName]: same task.
+    3rd failure (replacement also fails): [SKIP OriginalAgentName]: could not complete — <brief reason>. Move on.
+- [KICK] only if an agent is unresponsive or persistently wrong type for the job.
+- [SKIP] records the task as skipped in the manuscript so the final output is still complete.
 - NEVER spawn an agent whose name already appears in your team list above — assign to them instead.
 - [TASK_COMPLETE] when every piece of the mission is done and the final product is assembled.
 - NEVER write story, creative, or prose content yourself. You only direct.

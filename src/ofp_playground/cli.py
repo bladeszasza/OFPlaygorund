@@ -231,8 +231,10 @@ async def _run_session(
                 )
                 return
 
-            # Registry fallback: name check that works even before manifests arrive
-            if registry.by_name(name):
+            # Floor-registry fallback: use FloorManager's active agents as source of truth.
+            # AgentRegistry retains kicked agents; FloorManager removes them on [KICK],
+            # so this check correctly allows re-spawning a kicked agent under the same name.
+            if floor._resolve_agent_uri_by_name(name):
                 renderer.show_system_event(
                     f"[Orchestrator] Skipping spawn of '{name}' — agent already registered"
                 )
