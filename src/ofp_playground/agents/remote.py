@@ -17,6 +17,56 @@ logger = logging.getLogger(__name__)
 
 REMOTE_URI_TEMPLATE = "tag:ofp-playground.local,2025:remote-{name}"
 
+# Known public OFP agents from https://openfloor.dev/agent-registry
+# slug: (display_name, service_url, synopsis)
+KNOWN_REMOTE_AGENTS: dict[str, tuple[str, str, str]] = {
+    "polly": (
+        "Polly the Parrot",
+        "https://parrot-agent.openfloor.dev/",
+        "Echoes back any text message with a parrot emoji",
+    ),
+    "arxiv": (
+        "ArXiv Research Specialist",
+        "https://krsnzn5xm3.us-east-1.awsapprunner.com/",
+        "Find and analyze scientific papers on arXiv",
+    ),
+    "github": (
+        "GitHub Technology Analyst",
+        "https://p23fimjxfm.us-east-1.awsapprunner.com/",
+        "Analyze GitHub repositories for technology adoption trends",
+    ),
+    "sec": (
+        "SEC Financial Analyst",
+        "https://wzy3kbgcpr.us-east-1.awsapprunner.com/",
+        "Research SEC filings and financial data for public companies",
+    ),
+    "web-search": (
+        "Web Search Specialist",
+        "https://pszvphapmr.us-east-1.awsapprunner.com/",
+        "Search the web for current information, news, and guides",
+    ),
+    "wikipedia": (
+        "Wikipedia Research Specialist",
+        "https://yahandhjjf.us-east-1.awsapprunner.com/",
+        "Encyclopedic research and authoritative factual information",
+    ),
+    "stella": (
+        "Stella",
+        "https://openvoice-stella.vercel.app",
+        "Shows astronomical images from NASA's image libraries",
+    ),
+    "verity": (
+        "Verity",
+        "https://secondassistant.pythonanywhere.com/verity",
+        "Detects and mitigates hallucinations, fact-checking specialist",
+    ),
+    "profanity": (
+        "Content Moderator Sentinel",
+        "https://bladeszasza-ofpbadword.hf.space/ofp",
+        "Automated content moderation and profanity detection",
+    ),
+}
+
 
 class RemoteOFPAgent(BasePlaygroundAgent):
     """Proxy for an external OFP agent accessible via HTTP POST.

@@ -263,27 +263,43 @@ Ready-made scripts are in `examples/`:
 
 # Full romantic comedy with pre-configured HF workers
 ./examples/romanticomedy.sh
+
+# Cosmos floor — Claude narrator + Stella (NASA images) + ArXiv + Wikipedia + Verity (fact-check)
+./examples/cosmos_floor.sh "What do JWST observations reveal about galaxy formation?"
 ```
 
 ---
 
 ## Remote OFP Agents
 
+Remote agents are referenced by **slug name** or raw URL — no need to remember endpoint addresses:
+
 ```bash
+# Using known slugs
 ofp-playground start --no-human \
   --topic "Your topic here" \
   --agent "hf:Alice:You are Alice." \
-  --remote "https://parrot-agent.openfloor.dev/" \
-  --remote "https://yahandhjjf.us-east-1.awsapprunner.com/"
+  --remote polly \
+  --remote wikipedia
+
+# Or spawn mid-conversation
+/spawn remote arxiv
+/spawn remote https://my-custom-agent.example.com/ofp
 ```
 
-**Known live OFP agents:**
+**Known live OFP agents** — full registry at [openfloor.dev/agent-registry](https://openfloor.dev/agent-registry):
 
-| Name | URL | Description |
-|------|-----|-------------|
-| Talker | `https://bladeszasza-talker.hf.space/ofp` | Qwen3-0.6B conversational agent |
-| Parrot | `https://parrot-agent.openfloor.dev/` | Echoes everything back |
-| Wikipedia | `https://yahandhjjf.us-east-1.awsapprunner.com/` | Encyclopedic research |
+| Slug | Name | Description |
+|------|------|-------------|
+| `polly` | Polly the Parrot | Echoes back any message with a parrot emoji — great for testing OFP round-trips |
+| `arxiv` | ArXiv Research Specialist | Find and analyze scientific papers on arXiv |
+| `github` | GitHub Technology Analyst | Analyze repositories for technology adoption trends |
+| `sec` | SEC Financial Analyst | Research SEC filings and financial data for public companies |
+| `web-search` | Web Search Specialist | Search the web for current information, news, and guides |
+| `wikipedia` | Wikipedia Research Specialist | Encyclopedic research and authoritative factual information |
+| `stella` | Stella | Shows astronomical images from NASA's image libraries |
+| `verity` | Verity | Detects and mitigates hallucinations, fact-checking specialist |
+| `profanity` | Content Moderator Sentinel | Automated content moderation and profanity detection |
 
 ---
 

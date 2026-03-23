@@ -134,6 +134,39 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
     return agent_type, name, description, model_override, None, None, 0
 
 
+def _resolve_remote(slug_or_url: str) -> tuple[str, str]:
+    """Return (display_name, service_url) for a known agent slug or a raw URL."""
+    from ofp_playground.agents.remote import KNOWN_REMOTE_AGENTS
+    entry = KNOWN_REMOTE_AGENTS.get(slug_or_url.lower())
+    if entry:
+        return entry[0], entry[1]
+    # Treat as a raw URL; derive a short display name from the host
+    name = f"Remote-{slug_or_url.split('//')[-1].split('/')[0][:16]}"
+    return name, slug_or_url
+
+
+async def _connect_remote_agent(
+    slug_or_url: str,
+    floor: "FloorManager",
+    bus: "MessageBus",
+    registry: "AgentRegistry",
+    renderer: "TerminalRenderer",
+) -> None:
+    """Resolve slug-or-URL, create RemoteOFPAgent, register and start it."""
+    from ofp_playground.agents.remote import RemoteOFPAgent
+    display_name, url = _resolve_remote(slug_or_url)
+    remote = RemoteOFPAgent(
+        service_url=url,
+        name=display_name,
+        bus=bus,
+        conversation_id=floor.conversation_id,
+    )
+    floor.register_agent(remote.speaker_uri, remote.name)
+    registry.register(remote)
+    renderer.show_system_event(f"Connected {display_name} → {url}")
+    asyncio.create_task(remote.run())
+
+
 async def _seed_topic(topic: str, floor: "FloorManager", bus: "MessageBus") -> None:
     """Inject a topic message from the floor manager to kick off the conversation."""
     from openfloor import Envelope, Sender, Conversation, UtteranceEvent, DialogEvent, TextFeature, Token
@@ -252,9 +285,19 @@ async def _run_session(
         async def handle_spawn(args: str):
             parts = args.split(maxsplit=3)
             if len(parts) < 2:
-                renderer.show_system_event("Usage: /spawn <type> <name> [description] [model]")
+                renderer.show_system_event(
+                    "Usage: /spawn <type> <name> [description] [model]\n"
+                    "       /spawn remote <slug-or-url>  (e.g. /spawn remote polly)"
+                )
                 return
             agent_type = parts[0].lower()
+            if agent_type == "remote":
+                slug_or_url = parts[1]
+                try:
+                    await _connect_remote_agent(slug_or_url, floor, bus, registry, renderer)
+                except Exception as e:
+                    renderer.show_system_event(f"Failed to connect remote agent: {e}")
+                return
             name = parts[1]
             description = parts[2] if len(parts) > 2 else f"I am {name}, an AI assistant."
             model_ov = parts[3] if len(parts) > 3 else None
@@ -290,22 +333,11 @@ async def _run_session(
             renderer.show_system_event(f"Failed to spawn agent: {e}")
 
     # Connect remote agents
-    for url in remote_urls:
+    for slug_or_url in remote_urls:
         try:
-            from ofp_playground.agents.remote import RemoteOFPAgent
-            remote_name = f"Remote-{url.split('//')[-1].split('/')[0][:16]}"
-            remote = RemoteOFPAgent(
-                service_url=url,
-                name=remote_name,
-                bus=bus,
-                conversation_id=floor.conversation_id,
-            )
-            floor.register_agent(remote.speaker_uri, remote.name)
-            registry.register(remote)
-            renderer.show_system_event(f"Connected remote agent {remote_name} → {url}")
-            asyncio.create_task(remote.run())
+            await _connect_remote_agent(slug_or_url, floor, bus, registry, renderer)
         except Exception as e:
-            renderer.show_system_event(f"Failed to connect to {url}: {e}")
+            renderer.show_system_event(f"Failed to connect to {slug_or_url}: {e}")
 
     # LLM/remote agents are started via asyncio.create_task in _spawn_llm_agent;
     # only add the human agent run to tasks if present (handled above in the not no_human block)
@@ -726,7 +758,7 @@ async def _spawn_llm_agent(
 
     else:
         renderer.show_system_event(
-            f"Unknown agent type: {agent_type}. Use: anthropic, openai, google, hf"
+            f"Unknown agent type: {agent_type}. Use: anthropic, openai, google, hf, remote"
             f" (with -type for HF tasks, e.g. -type Text-to-Image,"
             f" -type Image-Classification, -type Summarization, etc."
             f" Run 'ofp-playground agents' for the full list)"
@@ -789,8 +821,8 @@ def main(ctx: click.Context, verbose: bool):
     "--remote", "-r",
     "remotes",
     multiple=True,
-    metavar="URL",
-    help="Connect to remote OFP agent URL",
+    metavar="URL_OR_NAME",
+    help="Connect to a remote OFP agent by URL or known slug (e.g. polly, arxiv, wikipedia)",
 )
 @click.option(
     "--no-human",
@@ -1041,7 +1073,9 @@ def agents():
         "                             -system carries the mission description\n"
         "                             directives: [ASSIGN], [ACCEPT], [REJECT], [KICK], [SPAWN], [TASK_COMPLETE]\n"
         "  [cyan]human[/cyan]               — Human participant (stdin/stdout)\n"
-        "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP"
+        "  [cyan]remote[/cyan]              — Remote OFP agent via HTTP (use --remote URL_OR_NAME)\n"
+        "                             known slugs: polly, arxiv, github, sec, web-search, wikipedia, stella, verity, profanity\n"
+        "                             full registry: https://openfloor.dev/agent-registry"
     )
 
 
