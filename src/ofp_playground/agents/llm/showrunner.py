@@ -295,7 +295,19 @@ class _OrchestratorBase:
         text = self._extract_text_from_envelope(envelope)
         if not text:
             return
-        if any(k in sender_uri for k in ("image", "video", "audio")):
+        _MEDIA_URI_KEYS = ("image-", "video-", "audio-")
+        uri_tail = sender_uri.split(":")[-1]
+        media_type: str | None = None
+        for prefix in _MEDIA_URI_KEYS:
+            if uri_tail.startswith(prefix):
+                media_type = prefix.rstrip("-")
+                break
+        if media_type is not None:
+            # Inform orchestrator the output was auto-accepted so it doesn't re-issue [ASSIGN]
+            sender_name = self._name_registry.get(sender_uri) or _uri_to_name(sender_uri)
+            self._append_to_context(
+                sender_name, f"[auto-accepted {media_type} output]: {text}", is_self=False
+            )
             return
         sender_name = self._name_registry.get(sender_uri) or _uri_to_name(sender_uri)
         self._append_to_context(sender_name, text, is_self=False)

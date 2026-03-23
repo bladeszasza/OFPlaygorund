@@ -337,7 +337,7 @@ class FloorManager:
 
             if self._orchestrator_uri:
                 # SHOWRUNNER_DRIVEN: every worker utterance returns floor to orchestrator
-                is_media = any(k in sender_uri for k in ("image", "video", "audio"))
+                is_media = media_key is not None  # detected from OFP features, covers "3d" too
                 if not is_media:
                     # Record last worker output for manuscript accumulation on [ACCEPT]
                     self._last_worker_text = text
@@ -347,6 +347,20 @@ class FloorManager:
                     if self._renderer:
                         self._renderer.show_system_event(
                             f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
+                        )
+                else:
+                    # Auto-accept media output — it cannot be text-verified via [ACCEPT]/[REJECT]
+                    entry = (
+                        f"[{media_key} by {sender_name}]: {media_path}"
+                        if media_path
+                        else f"[{media_key} by {sender_name}]: {text}"
+                    )
+                    self._manuscript.append(entry)
+                    self._assigned_uri = None
+                    await self.grant_to(self._orchestrator_uri)
+                    if self._renderer:
+                        self._renderer.show_system_event(
+                            f"[Auto-accepted] {sender_name}'s {media_key} output"
                         )
             else:
                 # Existing round-boundary logic (showrunner / director / summary)
