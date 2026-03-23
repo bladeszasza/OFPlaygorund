@@ -370,10 +370,10 @@ class FloorManager:
                             self._renderer.show_system_event(
                                 f"Round {self._round_count} complete — Director has the floor"
                             )
-                    elif len(text_agents) >= 3:
-                        # Only inject a round summary when there are enough agents
-                        # for context injection to be meaningful (3+ text agents).
-                        # With 1-2 agents (e.g. human + echo) it's just noise.
+                    elif self._has_llm_agent(text_agents):
+                        # Only inject a round summary when at least one LLM agent
+                        # is present — remote agents don't maintain narrative context
+                        # and would just echo/search for the summary text.
                         await self._inject_round_summary()
 
         # Display
@@ -566,6 +566,10 @@ class FloorManager:
             print(text)
             if filepath:
                 print(f"\n[saved to {filepath}]")
+
+    def _has_llm_agent(self, agent_uris: set[str]) -> bool:
+        """Return True if any of the given agent URIs belongs to a local LLM agent."""
+        return any("llm-" in uri for uri in agent_uris)
 
     async def _inject_round_summary(self) -> None:
         """Inject a director note between rounds to keep agents aligned."""

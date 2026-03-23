@@ -62,7 +62,7 @@ KNOWN_REMOTE_AGENTS: dict[str, tuple[str, str, str]] = {
     ),
     "verity": (
         "Verity",
-        "https://secondassistant.pythonanywhere.com/verity",
+        "https://secondassistant.pythonanywhere.com/verity/",
         "Detects and mitigates hallucinations, fact-checking specialist",
     ),
     "profanity": (
@@ -131,7 +131,7 @@ class RemoteOFPAgent(BasePlaygroundAgent):
             },
         }]
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
                 resp = await client.post(
                     self._remote_url, json=payload,
                     headers={"Content-Type": "application/json"},
@@ -205,7 +205,7 @@ class RemoteOFPAgent(BasePlaygroundAgent):
         }]
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
                 resp = await client.post(
                     self._remote_url,
                     json=payload,
@@ -232,14 +232,40 @@ class RemoteOFPAgent(BasePlaygroundAgent):
 
         return None
 
+    def _should_respond(self, sender_uri: str, text: str) -> tuple[bool, str]:
+        """Decide whether to respond to this utterance and return the task text to send.
+
+        Rules:
+        - Other remote agents → never (prevents cascade loops like Polly↔Wikipedia)
+        - Floor manager → only for [DIRECTIVE for <our name>] (showrunner_driven tasks);
+          director notes and round summaries are ignored
+        - Humans and local LLM agents → always, pass text through unchanged
+        """
+        import re
+
+        if "remote-" in sender_uri:
+            return False, ""
+
+        if sender_uri == FLOOR_MANAGER_URI:
+            m = re.match(r"\[DIRECTIVE\s+for\s+([^\]]+)\]\s*:\s*(.+)", text, re.DOTALL | re.IGNORECASE)
+            if m and m.group(1).strip().lower() == self._name.lower():
+                return True, m.group(2).strip()
+            return False, ""
+
+        return True, text
+
     async def _handle_utterance(self, envelope: Envelope) -> None:
-        if self._get_sender_uri(envelope) == self.speaker_uri:
+        sender_uri = self._get_sender_uri(envelope)
+        if sender_uri == self.speaker_uri:
             return
-        text = self._extract_text_from_envelope(envelope)
-        if not text:
+        raw_text = self._extract_text_from_envelope(envelope)
+        if not raw_text:
             return
-        self._pending_text = text
-        self._pending_sender_uri = self._get_sender_uri(envelope)
+        respond, task_text = self._should_respond(sender_uri, raw_text)
+        if not respond:
+            return
+        self._pending_text = task_text
+        self._pending_sender_uri = sender_uri
         if not self._has_floor:
             await self.request_floor("responding to conversation")
 
