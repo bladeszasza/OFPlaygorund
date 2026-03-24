@@ -324,8 +324,8 @@ async def _run_session(
         _breakout_session_count += 1
         if floor._memory_store:
             floor._memory_store.store(
-                "breakout",
-                f"session_{_breakout_session_count}",
+                "tasks",
+                f"breakout_{_breakout_session_count}",
                 f"'{result.topic}' | {result.round_count} rounds | "
                 f"{', '.join(result.agent_names)} → {artifact_path}",
             )
