@@ -615,18 +615,23 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
                     if directive:
                         spawn_directives.append(directive)
 
-        # Feed recall results back for a second Anthropic call
+        # Feed recall results back for a second Anthropic call.
+        # Include tool_results for ALL tool_use blocks — Anthropic rejects
+        # mismatched tool_use/tool_result pairs.
         if recall_blocks:
+            recall_ids = {blk.id for blk, _ in recall_blocks}
+            all_tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    if block.id in recall_ids:
+                        result = next(r for b, r in recall_blocks if b.id == block.id)
+                        all_tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
+                    else:
+                        all_tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": "OK"})
             kwargs2 = dict(kwargs)
             kwargs2["messages"] = list(messages) + [
                 {"role": "assistant", "content": response.content},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "tool_result", "tool_use_id": blk.id, "content": result}
-                        for blk, result in recall_blocks
-                    ],
-                },
+                {"role": "user", "content": all_tool_results},
             ]
             response2 = await loop.run_in_executor(None, lambda: _call(kwargs2))
             for block in response2.content:

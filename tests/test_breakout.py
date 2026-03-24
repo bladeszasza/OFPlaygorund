@@ -475,7 +475,8 @@ class TestRunBreakoutSession:
             policy=FloorPolicy.ROUND_ROBIN,
             parent_conversation_id="conv:test",
         )
-        assert "need at least 2 agents" in result
+        assert result.round_count == 0
+        assert result.history == []
 
     @pytest.mark.asyncio
     async def test_one_agent(self):
@@ -488,4 +489,5 @@ class TestRunBreakoutSession:
             policy=FloorPolicy.ROUND_ROBIN,
             parent_conversation_id="conv:test",
         )
-        assert "need at least 2 agents" in result
+        assert result.round_count == 0
+        assert result.agent_names == ["Solo"]

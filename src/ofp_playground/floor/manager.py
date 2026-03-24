@@ -492,6 +492,23 @@ class FloorManager:
         breakout_header: Optional[dict] = None  # parsed from [BREAKOUT ...]
         breakout_agent_specs: list[str] = []    # raw specs from [BREAKOUT_AGENT ...]
 
+        # Collapse multi-line [BREAKOUT ...] and [BREAKOUT_AGENT ...] blocks into
+        # single lines so the line-by-line parser below can handle them.
+        # This happens when the orchestrator writes the directive as raw text
+        # (rather than via a tool call) and includes a multi-line topic or system prompt.
+        text = re.sub(
+            r'\[BREAKOUT (?!AGENT\b|COMPLETE\b|SUMMARY\b)(.*?)\]',
+            lambda m: '[BREAKOUT ' + ' '.join(m.group(1).split()) + ']',
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        text = re.sub(
+            r'\[BREAKOUT_AGENT\b(.*?)\]',
+            lambda m: '[BREAKOUT_AGENT ' + ' '.join(m.group(1).split()) + ']',
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
         for line in text.splitlines():
             line = line.strip()
             if not line:
