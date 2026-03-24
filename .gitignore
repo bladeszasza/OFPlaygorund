@@ -62,3 +62,6 @@ ofp-music/
 ofp-breakout/
 manuscript_*.txt
 memory_*.json
+CLAUDE.md
+.claude/settings.local.json
+.claude/settings.local.json
