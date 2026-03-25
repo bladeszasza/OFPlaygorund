@@ -86,13 +86,27 @@ Generated audio from `GeminiMusicAgent` (Google Lyria).
 
 Format: WAV, 48kHz, 16-bit stereo PCM.
 
-Filename: `{timestamp}_{agent_name}.wav`
+Filename: `chapter_NN_music.wav` when the director instruction references a chapter number; otherwise `{timestamp}_{agent_name}.wav`.
 
 ### `web/*.html`
 
 Self-contained HTML pages from `WebPageAgent`. Images are embedded as base64 data URIs. Audio and video files are copied as sibling files for relative references.
 
-Filename: `{timestamp}_{agent_name}.html`
+Filename resolution order:
+1. `=== FILE: name.html ===` directive in the LLM output
+2. Chapter number parsed from the director instruction → `chapter_NN.html`
+3. `index` keyword in the directive → `index.html`
+4. Fallback: `{timestamp}_{agent_name}.html`
+
+## Semantic Renaming (post-process)
+
+If artifacts were produced with timestamp-slug names, use `ofp-playground postprocess` to rename them:
+
+```bash
+ofp-playground postprocess result/20260325_182519_ff7f8e14 --dry-run
+```
+
+See the [CLI Reference](cli.md#ofp-playground-postprocess) for full details.
 
 ### `breakout/*.md`
 

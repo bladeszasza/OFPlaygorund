@@ -46,6 +46,43 @@ List all available agent types and their CLI specs.
 ofp-playground agents
 ```
 
+### `ofp-playground postprocess`
+
+Deterministically rename image artifacts in a run result directory after a session completes.
+Reads `manuscript.txt` to determine generation order and maps timestamp-slug filenames to
+semantic names. No API key or LLM required.
+
+> Music (`.wav`) and HTML files are already named correctly by their agents during the session —
+> only images (`.png`) with timestamp-slug names need renaming.
+
+```bash
+ofp-playground postprocess <result_dir> [--dry-run]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dry-run` | Print planned changes without executing them | `False` |
+
+**Examples**:
+```bash
+# Preview what would be renamed
+ofp-playground postprocess result/20260325_182519_ff7f8e14 --dry-run
+
+# Execute the rename
+ofp-playground postprocess result/20260325_182519_ff7f8e14
+```
+
+**Target naming convention**:
+| File type | Target name |
+|-----------|-------------|
+| Character portraits | `images/character_NN.png` |
+| Chapter hero illustration | `images/chapter_NN_a.png` |
+| Chapter inline illustration | `images/chapter_NN_b.png` |
+| Chapter cutscene illustration | `images/chapter_NN_cutscene.png` |
+| Chapter music | `music/chapter_NN_music.wav` *(named by agent)* |
+| Chapter HTML pages | `web/chapter_NN.html` *(named by agent)* |
+| Index / landing page | `web/index.html` *(named by agent)* |
+
 ### `ofp-playground validate`
 
 Validate an OFP envelope JSON file.
