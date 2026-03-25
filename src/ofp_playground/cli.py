@@ -1308,6 +1308,48 @@ def agents():
 
 
 @main.command()
+@click.argument("result_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--dry-run", is_flag=True, default=False, help="Print planned changes without executing them.")
+@click.option("--task", default=None, help="Override the default rename task description.")
+@click.option("--model", default=None, help="Anthropic model to use (default: claude-sonnet-4-6).")
+def postprocess(result_dir: str, dry_run: bool, task: Optional[str], model: Optional[str]):
+    """Deterministically rename artifacts in a run result directory.
+
+    Reads manuscript.txt to map {timestamp}_{agentslug}.png names to
+    character_NN.png / chapter_NN_a.png / chapter_NN_b.png etc.
+    Music and HTML files are already named correctly by their agents.
+    No API keys required.
+
+    Example:
+        ofp-playground postprocess result/20260325_182519_ff7f8e14 --dry-run
+    """
+    from ofp_playground.agents.postprocessor import PostProcessorAgent, DEFAULT_TASK
+
+    result_path = Path(result_dir)
+    if dry_run:
+        console.print(f"[yellow]DRY RUN — no files will be changed[/yellow]")
+    console.print(f"Post-processing: [bold]{result_path}[/bold]")
+
+    agent = PostProcessorAgent(
+        result_dir=result_path,
+        dry_run=dry_run,
+    )
+
+    try:
+        actions = asyncio.run(agent.run())
+    except Exception as e:
+        console.print(f"[red]Post-processing failed: {e}[/red]")
+        sys.exit(1)
+
+    if actions:
+        console.print(f"\n[green]Actions ({len(actions)}):[/green]")
+        for a in actions:
+            console.print(f"  {a}")
+    else:
+        console.print("[dim]No actions taken.[/dim]")
+
+
+@main.command()
 @click.argument("envelope_file", type=click.Path(exists=True))
 def validate(envelope_file: str):
     """Validate an OFP envelope JSON file."""
