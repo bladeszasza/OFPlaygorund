@@ -209,6 +209,8 @@ def _json_schema_to_google_schema(schema: dict):
         }
     if "required" in schema:
         kwargs["required"] = schema["required"]
+    if "items" in schema:
+        kwargs["items"] = _json_schema_to_google_schema(schema["items"])
     return types.Schema(**kwargs)
 
 

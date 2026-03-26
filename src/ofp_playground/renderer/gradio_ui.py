@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Optional
@@ -126,11 +127,18 @@ def _envelope_to_chat_messages(
 
         messages: list[dict] = []
 
+        # Highlight [TASK_COMPLETE] in display text
+        task_complete = "[TASK_COMPLETE]" in text
+        display_text = (
+            text.replace("[TASK_COMPLETE]", "**✅ [TASK_COMPLETE]**")
+            if task_complete else text
+        )
+
         # Text message
-        if text:
+        if display_text:
             messages.append({
                 "role": role,
-                "content": text,
+                "content": display_text,
                 "metadata": {"title": title_with_color},
             })
 
@@ -159,6 +167,46 @@ def _envelope_to_chat_messages(
                     "content": f"📎 {media_path}",
                     "metadata": {"title": title_with_color},
                 })
+
+        # HTML file preview — embed as sandboxed iframe via data URL
+        html_match = re.search(r"(/[^\s<>\"']+\.html)", text)
+        if html_match:
+            html_file = Path(html_match.group(1))
+            if html_file.exists():
+                try:
+                    iframe = (
+                        f'<iframe src="/file={html_file.resolve()}" '
+                        f'width="100%" height="520" '
+                        f'style="border:1px solid #444;border-radius:10px;'
+                        f'margin-top:6px;display:block;" '
+                        f'sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>'
+                    )
+                    messages.append({
+                        "role": role,
+                        "content": gr.HTML(value=iframe),
+                        "metadata": {"title": title_with_color},
+                    })
+                except Exception:
+                    pass  # silently skip if file can't be read/encoded
+
+        # Task-complete banner
+        if task_complete:
+            banner = (
+                '<div style="'
+                "background:linear-gradient(135deg,#0a2e0a,#1a5c1a);"
+                "border:2px solid #4caf50;border-radius:14px;"
+                "padding:18px 28px;text-align:center;margin:4px 0;"
+                '">'
+                '<span style="color:#6eff6e;font-size:1.5rem;font-weight:800;">'
+                "✅ Task Complete"
+                "</span>"
+                "</div>"
+            )
+            messages.append({
+                "role": role,
+                "content": gr.HTML(value=banner),
+                "metadata": {"title": title_with_color},
+            })
 
         return messages
 
@@ -193,11 +241,16 @@ class GradioRenderer:
         self._human_uris = human_uris
         self._color_map: dict[str, str] = {}
         self._history: list[dict] = []
+        self._agent_meta: dict[str, str] = {}  # uri → "type / model"
         self._lock = threading.Lock()
 
     def add_agent(self, speaker_uri: str, name: str) -> None:
         with self._lock:
             self._agent_names[speaker_uri] = name
+
+    def add_agent_meta(self, speaker_uri: str, label: str) -> None:
+        with self._lock:
+            self._agent_meta[speaker_uri] = label
 
     def add_human(self, speaker_uri: str) -> None:
         with self._lock:
@@ -276,19 +329,23 @@ def launch_web_session(
     host: str = "0.0.0.0",
     port: int = 7860,
     share: bool = False,
+    gradio_renderer: Optional[GradioRenderer] = None,
 ) -> None:
     """Launch the Gradio web UI.  Must be called from the main thread after the
     asyncio event loop is already running in a background thread.
 
     When human_agent is None the UI is watch-only (autonomous agent mode).
+    When gradio_renderer is provided (pre-created with spawn events), it is used
+    directly instead of creating a fresh one.
     """
     import gradio as gr
 
-    human_uris = {human_agent.speaker_uri} if human_agent else set()
-    gradio_renderer = GradioRenderer(
-        agent_names=dict(floor.active_agents),
-        human_uris=human_uris,
-    )
+    if gradio_renderer is None:
+        human_uris = {human_agent.speaker_uri} if human_agent else set()
+        gradio_renderer = GradioRenderer(
+            agent_names=dict(floor.active_agents),
+            human_uris=human_uris,
+        )
 
     if human_agent:
         asyncio.run_coroutine_threadsafe(
@@ -309,16 +366,18 @@ def launch_web_session(
     def _build_status_md() -> str:
         agents = getattr(floor, "active_agents", {})
         holder = getattr(floor, "floor_holder", None)
+        meta = gradio_renderer._agent_meta
         lines = []
         for uri, name in agents.items():
-            icon = _agent_icon(uri)
+            label = meta.get(uri, "")
+            suffix = f" ({label})" if label else ""
             if uri == holder:
-                lines.append(f"**{icon} {name}** 🎤 ← *has floor*")
+                lines.append(f"**{name}{suffix}** ← *has floor*")
             else:
-                lines.append(f"{icon} {name}")
+                lines.append(f"{name}{suffix}")
         if not lines:
             lines = ["*No agents yet*"]
-        return "\n".join(lines)
+        return "\n\n".join(lines)
 
     # ── UI submit helper ──────────────────────────────────────────────────────
     def submit_message(user_text: str, history: list[dict]):
@@ -387,10 +446,6 @@ def launch_web_session(
                 status_md = gr.Markdown(
                     _build_status_md(),
                     elem_id="agent-status",
-                )
-                gr.Markdown(
-                    f"**Session**: {', '.join(agent_specs_display)}",
-                    elem_id="agent-list",
                 )
 
         # Wire submit handlers now that all components exist

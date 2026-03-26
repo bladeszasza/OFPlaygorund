@@ -37,12 +37,13 @@ class DefaultsConfig:
     llm_model_anthropic: str = "claude-haiku-4-5-20251001"          # smallest Claude
     vision_model_anthropic: str = "claude-haiku-4-5-20251001"       # Claude vision (image-to-text)
     llm_model_openai: str = "gpt-5.4-nano"                          # smallest GPT-5.4
-    image_model_openai: str = "gpt-4o"                               # model used with image_generation tool
+    image_model_openai: str = "gpt-5"                               # model used with image_generation tool
     vision_model_openai: str = "gpt-4o-mini"                        # OpenAI vision (image-to-text)
     llm_model_google: str = "gemini-3.1-flash-lite-preview"          # default Gemini text model
     image_model_google: str = "gemini-3.1-flash-image-preview"      # Gemini image generation (Nano Banana)
     vision_model_google: str = "gemini-3-flash-preview"              # Gemini vision (image-to-text)
     music_model_google: str = "models/lyria-realtime-exp"            # Lyria RealTime music generation
+    video_model_google: str = "veo-3.1-generate-preview"             # Veo video generation
     llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.5"           # stronger default for HF debates
     relevance_filter: bool = True
 
@@ -113,6 +114,7 @@ class Settings:
                 "image_model_google": self.defaults.image_model_google,
                 "vision_model_google": self.defaults.vision_model_google,
                 "music_model_google": self.defaults.music_model_google,
+                "video_model_google": self.defaults.video_model_google,
                 "relevance_filter": self.defaults.relevance_filter,
             },
         }

@@ -18,9 +18,7 @@ from ofp_playground.bus.message_bus import MessageBus
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("ofp-images")
-# Image generation uses the Responses API with the image_generation tool.
-# Any model that supports the tool works (gpt-4o, gpt-5, etc.).
-DEFAULT_MODEL = "gpt-4o"
+DEFAULT_MODEL = "gpt-image-1"
 IMAGE_URI_TEMPLATE = "tag:ofp-playground.local,2025:image-{name}"
 DEFAULT_VISION_MODEL = "gpt-4o-mini"
 VISION_URI_TEMPLATE = "tag:ofp-playground.local,2025:vision-{name}"
@@ -108,19 +106,32 @@ class OpenAIImageAgent(BasePlaygroundAgent):
 
         def _call() -> bytes:
             client = self._get_client()
-            response = client.responses.create(
-                model=self._model,
-                input=prompt,
-                tools=[{"type": "image_generation"}],
-            )
-            image_data = [
-                output.result
-                for output in response.output
-                if output.type == "image_generation_call"
-            ]
-            if not image_data:
-                raise RuntimeError("OpenAI image generation returned no image data")
-            return base64.b64decode(image_data[0])
+            if self._model.startswith("gpt-image-") or self._model == "chatgpt-image-latest":
+                # Images API — native GPT Image models
+                response = client.images.generate(
+                    model=self._model,
+                    prompt=prompt,
+                    n=1,
+                    size="1024x1024",
+                )
+                if not response.data or not response.data[0].b64_json:
+                    raise RuntimeError("OpenAI image generation returned no image data")
+                return base64.b64decode(response.data[0].b64_json)
+            else:
+                # Responses API — mainline models (gpt-4o, gpt-4.1, gpt-5, …)
+                response = client.responses.create(
+                    model=self._model,
+                    input=prompt,
+                    tools=[{"type": "image_generation"}],
+                )
+                image_data = [
+                    output.result
+                    for output in response.output
+                    if output.type == "image_generation_call"
+                ]
+                if not image_data:
+                    raise RuntimeError("OpenAI image generation returned no image data")
+                return base64.b64decode(image_data[0])
 
         async def _coro() -> bytes:
             return await loop.run_in_executor(None, _call)

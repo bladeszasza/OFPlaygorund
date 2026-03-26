@@ -10,7 +10,8 @@ BasePlaygroundAgent
 ├── ImageAgent              — HuggingFace text-to-image (FLUX)
 ├── VideoAgent              — HuggingFace text-to-video
 ├── OpenAIImageAgent        — OpenAI text-to-image
-├── GeminiImageAgent        — Google Gemini text-to-image
+├── GeminiImageAgent        — Google Gemini text-to-image (Nano Banana)
+├── GeminiVideoAgent        — Google Veo text-to-video
 ├── GeminiMusicAgent        — Google Lyria text-to-music
 └── BaseLLMAgent
     ├── AnthropicAgent          — Claude text generation
@@ -169,27 +170,48 @@ Responds to:
 
 **File**: `src/ofp_playground/agents/llm/openai_image.py`  
 **CLI type**: `openai:text-to-image`  
-**Default model**: `gpt-4o` (Responses API with `image_generation` tool)  
+**Default model**: `gpt-5` (Responses API with `image_generation` tool)  
 **Output**: `result/<session>/images/`
 
-### GeminiImageAgent
+### GeminiImageAgent (Nano Banana)
 
-**File**: `src/ofp_playground/agents/llm/google_image.py`  
-**CLI type**: `google:text-to-image`  
-**Default model**: `gemini-3.1-flash-image-preview`  
-**Fallback model**: `gemini-2.5-flash-image` (on 503)  
+**File**: `src/ofp_playground/agents/llm/google_image.py`
+**CLI type**: `google:text-to-image`
+**Default model**: `gemini-3.1-flash-image-preview` (Nano Banana 2)
+**Fallback model**: `gemini-2.5-flash-image` (Nano Banana, on 503)
 **Output**: `result/<session>/images/`
 
 ---
 
-## Video Generation Agent
+## Video Generation Agents
 
-### VideoAgent
+### VideoAgent (HuggingFace Wan)
 
-**File**: `src/ofp_playground/agents/llm/video.py`  
-**CLI type**: `hf:text-to-video`  
-**Default model**: `Wan-AI/Wan2.2-TI2V-5B`  
+**File**: `src/ofp_playground/agents/llm/video.py`
+**CLI type**: `hf:text-to-video`
+**Default model**: `Wan-AI/Wan2.2-TI2V-5B`
 **Output**: `result/<session>/videos/`
+
+### GeminiVideoAgent
+
+**File**: `src/ofp_playground/agents/llm/google_video.py`
+**CLI type**: `google:text-to-video`
+**Default model**: `veo-3.1-generate-preview`
+**Fallback model**: `veo-3.1-fast-generate-preview` (on 503)
+**Output**: `result/<session>/videos/`
+
+Uses Google Veo 3.1 API (long-running polling):
+1. Submit `generate_videos()` request
+2. Poll `operations.get()` every 10 seconds until `operation.done`
+3. Download via `client.files.download()`
+4. Save as `.mp4` with native audio
+
+Responds to:
+- `[VIDEO]: prompt` directives
+- `[DIRECTIVE for Name]: prompt` from orchestrator
+- Regular conversation text (builds prompt from content)
+
+Note: Video generation can take up to 6 minutes. Use `-timeout 360` when spawning this agent.
 
 ---
 

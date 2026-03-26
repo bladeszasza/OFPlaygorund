@@ -80,7 +80,7 @@ timeout_seconds = 30
 
 | Provider | Default Model |
 |----------|---------------|
-| OpenAI | `gpt-4o` (Responses API) |
+| OpenAI | `gpt-5` (Responses API) |
 | Google | `gemini-3.1-flash-image-preview` (fallback: `gemini-2.5-flash-image`) |
 | HuggingFace | `black-forest-labs/FLUX.1-dev` |
 
@@ -186,7 +186,7 @@ class DefaultsConfig:
     llm_model_anthropic: str = "claude-haiku-4-5-20251001"
     vision_model_anthropic: str = "claude-haiku-4-5-20251001"
     llm_model_openai: str = "gpt-5.4-nano"
-    image_model_openai: str = "gpt-4o"
+    image_model_openai: str = "gpt-5"
     vision_model_openai: str = "gpt-4o-mini"
     llm_model_google: str = "gemini-3.1-flash-lite-preview"
     image_model_google: str = "gemini-3.1-flash-image-preview"

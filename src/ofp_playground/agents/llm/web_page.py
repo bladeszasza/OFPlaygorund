@@ -54,6 +54,14 @@ class WebPageAgent(BaseLLMAgent):
             api_key=api_key,
         )
         self._provider = provider.lower()
+        if not self._model:
+            _defaults = {
+                "anthropic": DEFAULT_MODEL_ANTHROPIC, "claude": DEFAULT_MODEL_ANTHROPIC,
+                "openai": DEFAULT_MODEL_OPENAI, "gpt": DEFAULT_MODEL_OPENAI,
+                "google": DEFAULT_MODEL_GOOGLE, "gemini": DEFAULT_MODEL_GOOGLE,
+                "hf": DEFAULT_MODEL_HF, "huggingface": DEFAULT_MODEL_HF,
+            }
+            self._model = _defaults.get(self._provider, DEFAULT_MODEL_HF)
         self._collected_images: list[tuple[str, Path]] = []
         self._collected_audio: list[tuple[str, Path]] = []
         self._collected_video: list[tuple[str, Path]] = []
