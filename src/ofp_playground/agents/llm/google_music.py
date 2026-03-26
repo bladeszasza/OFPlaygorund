@@ -161,8 +161,14 @@ class GeminiMusicAgent(BasePlaygroundAgent):
             raise RuntimeError("Lyria returned no audio data")
 
         pcm_data = b"".join(audio_chunks)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = self._output_dir / f"{ts}_{self._name.lower()}.wav"
+        # Use chapter-aware filename when possible
+        chapter_m = re.search(r'chapter[_\s]+(\d+)', self._raw_prompt or "", re.IGNORECASE)
+        if chapter_m:
+            fname = f"chapter_{chapter_m.group(1).zfill(2)}_music.wav"
+        else:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"{ts}_{self._name.lower()}.wav"
+        path = self._output_dir / fname
         with wave.open(str(path), "wb") as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(BYTES_PER_SAMPLE)

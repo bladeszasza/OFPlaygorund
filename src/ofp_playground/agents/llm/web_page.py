@@ -145,11 +145,11 @@ class WebPageAgent(BaseLLMAgent):
                 f"Reference as: <img src=\"{path.name}\" alt=\"{desc}\">\n"
             )
 
-        # Audio — sibling file reference
+        # Audio — sibling file reference (use exact extension from path, never convert .wav→.mp3)
         for i, (desc, path) in enumerate(self._collected_audio):
             parts.append(
                 f"## AUDIO {i + 1}: {desc}\n"
-                f"Filename: {path.name}\n"
+                f"Filename: {path.name}  (extension is {path.suffix} — use exactly as shown)\n"
                 f"Embed as: <audio controls src=\"{path.name}\"></audio>\n"
             )
 
@@ -166,11 +166,26 @@ class WebPageAgent(BaseLLMAgent):
             log_text = "\n".join(self._floor_log[-15:])
             parts.append(f"## FLOOR LOG (last 15 events)\n```\n{log_text}\n```\n")
 
+        # Chapter page structure template (guidance for consistent layout across chapters)
+        if self._collected_audio or re.search(r'chapter[_\s]+\d+', self._page_directive, re.IGNORECASE):
+            parts.append(
+                "\n=== CHAPTER PAGE STRUCTURE ===\n"
+                "All chapter pages MUST follow this structural skeleton (adapt content, preserve layout):\n"
+                "  1. .chapter-hero  — full-bleed background (illustration A), gradient overlay, chapter number + title\n"
+                "  2. .chapter-body  — drop-cap first paragraph, serif body text, generous line-height\n"
+                "  3. .illustration-b — second illustration inline with caption\n"
+                "  4. .chapter-audio — <audio controls> player (no autoplay), minimal UI\n"
+                "  5. .chapter-nav   — prev / next chapter links\n"
+                "CSS variables: --bg-dark:#0f0f12, --text-primary:#e0e0e0, --accent:#ffbf00, "
+                "--panel:#1a1a1e, --font-serif:Georgia serif, --font-body:system-ui sans-serif\n"
+            )
+
         parts.append(
             "\n=== INSTRUCTION ===\n"
             "Generate the complete HTML page now. "
             "Use the full base64 strings provided for <img> embeds. "
-            "Audio and video files should be referenced by filename only (sibling of the HTML file). "
+            "Audio and video files must be referenced by the EXACT filename shown above — do not change the extension. "
+            "Image src attributes must use the EXACT filename shown — do not guess or modify filenames. "
             "Return ONLY the HTML document (<!DOCTYPE html> through </html>). "
             "No markdown fences, no preamble, no explanation."
         )
@@ -181,6 +196,24 @@ class WebPageAgent(BaseLLMAgent):
         text = re.sub(r"^```html?\s*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
         return text.strip()
+
+    def _derive_filename(self) -> str:
+        """Derive a semantic filename from the director instruction.
+
+        Tries (in order):
+          1. Chapter number from directive  → chapter_NN.html
+          2. Index/landing page hint        → index.html
+          3. Timestamp + agent slug fallback
+        """
+        directive = self._page_directive or self._current_director_instruction
+        m = re.search(r'chapter[_\s]+(\d+)', directive, re.IGNORECASE)
+        if m:
+            return f"chapter_{m.group(1).zfill(2)}.html"
+        if re.search(r'\bindex\b', directive, re.IGNORECASE):
+            return "index.html"
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        slug = re.sub(r"[^\w]+", "_", self._name.lower())
+        return f"{ts}_{slug}.html"
 
     def _extract_file_directive(self, text: str) -> tuple[str, str]:
         """Extract === FILE: name.html === wrapper from LLM output.
@@ -296,9 +329,7 @@ class WebPageAgent(BaseLLMAgent):
                 filename, html = self._extract_file_directive(html)
                 html = self._postprocess_inline_images(html)  # inline base64 after generation
                 if not filename:
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    slug = re.sub(r"[^\w]+", "_", self._name.lower())
-                    filename = f"{ts}_{slug}.html"
+                    filename = self._derive_filename()
                 path = self._output_dir / filename
                 path.write_text(html, encoding="utf-8")
 
