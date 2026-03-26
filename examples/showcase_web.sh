@@ -3,7 +3,7 @@
 # Usage: bash examples/showcase_web.sh [TOPIC]
 # Keys: OPENAI_API_KEY, GOOGLE_API_KEY, HF_API_KEY
 
-# Csabi (the human) will introduce the topic live in the UI
+# Jhony (the human) will introduce the topic live in the UI
 
 # ─────────────────────────────────────────────
 # AGENT SYSTEM PROMPTS
@@ -413,13 +413,13 @@ OUTPUT — one file, no truncation:
 # ─────────────────────────────────────────────
 
 ofp-playground web \
-  --human-name Csabi \
+  --human-name Jhony \
   --policy showrunner_driven \
   --max-turns 600 \
   --agent "anthropic:orchestrator:Director:${DIRECTOR_MISSION}" \
   --agent "anthropic:ContentWriter:${CONTENT_WRITER_PROMPT}" \
   --agent "google:text-to-image:NanoBananPainter:${NANO_BANAN_PAINTER_PROMPT}" \
   --agent "google:text-to-music:Composer:${COMPOSER_PROMPT}" \
-  --agent "openai:Architect:${ARCHITECT_PROMPT}:gpt-5.4" \
+  --agent "anthropic:Architect:${ARCHITECT_PROMPT}:claude-sonnet-4-6" \
   --agent "anthropic:web-page-generation:FrontendDev:${FRONTEND_DEV_PROMPT}" \
   --port 7860
