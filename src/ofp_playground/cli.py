@@ -1197,7 +1197,7 @@ async def _run_web_session(
     term_renderer = TerminalRenderer(console, show_floor_events=False)
     for spec in agent_specs:
         try:
-            agent_type, name, description, model_ov, max_tokens_ov = _parse_agent_spec(spec)
+            agent_type, name, description, model_ov, max_tokens_ov, *_ = _parse_agent_spec(spec)
             await _spawn_llm_agent(
                 agent_type, name, description, floor, bus, registry,
                 term_renderer, settings, model_ov, max_tokens_ov,
