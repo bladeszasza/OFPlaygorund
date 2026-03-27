@@ -88,11 +88,9 @@ Format: WAV, 48kHz, 16-bit stereo PCM.
 
 Filename: `{timestamp}_{agent_name}.wav`
 
-### `web/*.html`
+### `code/*`
 
-Self-contained HTML pages from `WebPageAgent`. Images are embedded as base64 data URIs. Audio and video files are copied as sibling files for relative references.
-
-Filename: `{timestamp}_{agent_name}.html`
+Generated code files from `CodingAgent`. Files are saved to `ofp-code/` with the naming pattern `<timestamp>_<agentname>_<filename>`. The agent reports saved file paths in its final utterance back to the conversation.
 
 ### `breakout/*.md`
 
