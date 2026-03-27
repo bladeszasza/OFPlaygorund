@@ -152,10 +152,7 @@ async def test_files_saved_to_ofp_code(tmp_path):
     mock_stream = AsyncMock()
     mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
     mock_stream.__aexit__ = AsyncMock(return_value=False)
-    async def _events():
-        for e in [progress_event, file_done_event]:
-            yield e
-    mock_stream.__aiter__ = _events().__aiter__
+    mock_stream.__aiter__.return_value = iter([progress_event, file_done_event])
     mock_stream.get_final_response = AsyncMock(return_value=mock_final)
 
     mock_file_content = MagicMock(content=fake_bytes)
