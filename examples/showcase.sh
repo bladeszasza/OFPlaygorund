@@ -382,7 +382,7 @@ OUTPUT:
   === FILE: index.html ===
   [full HTML]
   === END FILE ==="
-# (WebPageAgent controls the output directory; the filename inside === FILE: === is used as-is)
+# (CodingAgent controls the output directory; files are saved to ofp-code/)
 
 # ─────────────────────────────────────────────
 # LAUNCH
@@ -396,6 +396,6 @@ ofp-playground start \
   --agent "hf:StoryWriter:${STORY_WRITER_PROMPT}" \
   --agent "hf:text-to-image:NanoBananPainter:${NANO_BANAN_PAINTER_PROMPT}" \
   --agent "google:text-to-music:Composer:${COMPOSER_PROMPT}" \
-  --agent "hf:web-page-generation:ChapterBuilder:${CHAPTER_BUILDER_PROMPT}:moonshotai/Kimi-K2.5" \
-  --agent "hf:web-page-generation:WebProjectBuilder:${WEB_PROJECT_BUILDER_PROMPT}:moonshotai/Kimi-K2.5" \
+  --agent "openai:code-generation:ChapterBuilder:${CHAPTER_BUILDER_PROMPT}" \
+  --agent "openai:code-generation:WebProjectBuilder:${WEB_PROJECT_BUILDER_PROMPT}" \
   --topic "$TOPIC"
