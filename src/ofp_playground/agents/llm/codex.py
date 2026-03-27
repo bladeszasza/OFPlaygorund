@@ -135,7 +135,7 @@ class CodingAgent(BaseLLMAgent):
         file_ids: list[tuple[str, str]] = []  # (file_id, filename)
 
         try:
-            async with client.responses.stream(
+            async with client.responses.stream(  # type: ignore[call-overload]
                 model=self._model,
                 instructions=self._synopsis,
                 input=context,
@@ -171,7 +171,7 @@ class CodingAgent(BaseLLMAgent):
                                 output_text += getattr(part, "text", "")
 
         finally:
-            await client.aclose()
+            await client.close()
 
         # Download files produced by code_interpreter
         saved_files: list[Path] = []
@@ -191,7 +191,7 @@ class CodingAgent(BaseLLMAgent):
                 except Exception as e:
                     logger.error("[%s] Failed to save file %s: %s", self._name, file_id, e)
         finally:
-            await dl_client.aclose()
+            await dl_client.close()
 
         return output_text, saved_files
 

@@ -9,6 +9,17 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+import click
+from rich.console import Console
+
+from ofp_playground.agents.human import HumanAgent
+from ofp_playground.agents.registry import AgentRegistry
+from ofp_playground.bus.message_bus import MessageBus
+from ofp_playground.config.settings import Settings
+from ofp_playground.floor.manager import FloorManager
+from ofp_playground.floor.policy import FloorPolicy
+from ofp_playground.renderer.terminal import TerminalRenderer
+
 logger = logging.getLogger(__name__)
 
 # Noisy third-party loggers to silence even in verbose mode
@@ -26,18 +37,6 @@ def _configure_logging(verbose: bool) -> None:
         logging.getLogger("ofp_playground").setLevel(logging.DEBUG)
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-
-
-import click
-from rich.console import Console
-
-from ofp_playground.bus.message_bus import MessageBus
-from ofp_playground.config.settings import Settings
-from ofp_playground.floor.manager import FloorManager
-from ofp_playground.floor.policy import FloorPolicy
-from ofp_playground.renderer.terminal import TerminalRenderer
-from ofp_playground.agents.human import HumanAgent
-from ofp_playground.agents.registry import AgentRegistry
 
 console = Console()
 
@@ -1243,7 +1242,7 @@ async def _run_web_session(
     _human_uris: set[str] = set()
     web_renderer = GradioRenderer(agent_names={}, human_uris=_human_uris)
     web_renderer.add_system_event(
-        f"Running in autonomous mode" if no_human else "Interactive mode"
+        "Running in autonomous mode" if no_human else "Interactive mode"
     )
     web_renderer.add_system_event(f"Conversation started (ID: {floor.conversation_id[:8]}...)")
 
@@ -1404,7 +1403,7 @@ def validate(envelope_file: str):
         of_data = data.get("openFloor", data)
         from openfloor import Envelope
         envelope = Envelope(**of_data)
-        console.print(f"[green]✓ Valid OFP envelope[/green]")
+        console.print("[green]✓ Valid OFP envelope[/green]")
         console.print(f"  Conversation: {envelope.conversation.id if envelope.conversation else 'N/A'}")
         console.print(f"  Sender: {envelope.sender.speakerUri if envelope.sender else 'N/A'}")
         console.print(f"  Events: {len(envelope.events or [])}")
