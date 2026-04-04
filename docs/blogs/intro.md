@@ -134,7 +134,9 @@ But the *shape* of the output is genuinely surprising. When you open the final i
 
 ## What You Can Actually Test
 
-Multi-agent AI systems fail in specific, learnable ways. The playground is a controlled environment for discovering those failure modes before they matter. Here is what I learned:
+Multi-agent AI systems fail in specific, learnable ways. The playground is a controlled environment for discovering those failure modes before they matter. Feel free to use the `--show-floor-events` and `-v` to showcase floor events and debug logs.
+
+Here is what I learned:
 
 **Model behavior under instruction varies wildly.** Sending the same task directive to an Anthropic agent, an OpenAI agent, and a Google agent with identical system prompts produces outputs that can differ dramatically in length, structure, specificity, and willingness to follow formatting constraints. You want to know this about your specific task before you pick a provider and lock in.
 
