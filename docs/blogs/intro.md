@@ -220,7 +220,7 @@ The second is web UI maturity. The Gradio-backed interface (`ofp-playground web`
 
 I started building this because I wanted to understand how multi-agent AI systems actually work — not in theory, not in papers, but in the specific and humbling way that things work when you run them. The Open Floor Protocol gave me a conceptual foundation that is solid. The playground gave me the experimental surface I needed to stress-test that foundation.
 
-What I did not expect was to produce things I wanted to keep. A short illustrated story with a loopable ambient score. A chapter HTML page that looked designed rather than generated. A few genuinely strange crossovers between agents that had no business working as well as they did. The outputs are imperfect. 
+What I did not expect was to produce things I wanted to keep. A short illustrated story with a loopable ambient score. A chapter HTML page that looked designed rather than generated. A few genuinely strange crossovers between agents that had no business working as well as they did. The outputs are imperfect, nevertheless impressive what can be created even from one imperfect prompt nowadays.
 
 The code is at [github.com/bladeszasza/OFPlayground](https://github.com/bladeszasza/OFPlayground). The protocol it's built on is at [openfloor.dev](https://openfloor.dev/introduction). If you build something with it, or discover a failure mode I haven't encountered yet, I genuinely want to hear about it.
 
