@@ -4,7 +4,7 @@
 
 ---
 
-Building it taught me more about how language models actually collaborate — or fail to — than anything I had read about them. The surprise was not that it worked. The surprise was what it made.
+Building it taught me about how language models actually collaborate — or fail to — .
 
 So. Let's talk about the Open Floor Protocol, the playground I built on top of it, and what happens when you let a bunch of AI agents loose in a room together.
 
