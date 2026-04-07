@@ -116,6 +116,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
             raise click.BadParameter(f"Missing -provider in agent spec: {spec}")
         if not name:
             raise click.BadParameter(f"Missing -name in agent spec: {spec}")
+        description = _resolve_agent_slug(description)
         return agent_type, name, description, model_override, max_tokens_override, timeout_override, max_retries_override
 
     # Colon-separated format.
@@ -177,7 +178,25 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         else:
             description = f"I am {name}, an AI assistant."
             model_override = None
+    description = _resolve_agent_slug(description)
     return agent_type, name, description, model_override, None, None, 0
+
+
+def _resolve_agent_slug(description: str) -> str:
+    """If description starts with '@', resolve it to the matching SOUL.md content.
+
+    Examples::
+
+        @creative/brand-designer   → reads agents/creative/brand-designer/SOUL.md
+        @marketing/copywriter      → reads agents/marketing/copywriter/SOUL.md
+    """
+    if not description or not description.startswith("@"):
+        return description
+    try:
+        from ofp_playground.agents.library import resolve_slug
+        return resolve_slug(description)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 def _resolve_remote(slug_or_url: str) -> tuple[str, str]:
@@ -1308,6 +1327,18 @@ async def _run_web_session(
     # Get the running loop and launch Gradio from this coroutine's thread
     loop = asyncio.get_event_loop()
 
+    async def _web_spawn_fn(spec: str) -> None:
+        """Spawn an agent from the Gradio UI into the running session."""
+        try:
+            at, name, desc, model_ov, maxtok_ov, timeout_ov, maxretry_ov = _parse_agent_spec(spec)
+            await _spawn_llm_agent(
+                at, name, desc, floor, bus, registry,
+                term_renderer, settings, model_ov, maxtok_ov,
+                web_renderer=web_renderer,
+            )
+        except Exception as e:
+            web_renderer.add_system_event(f"Spawn failed: {e}")
+
     def _launch():
         launch_web_session(
             floor=floor,
@@ -1320,6 +1351,7 @@ async def _run_web_session(
             port=port,
             share=share,
             gradio_renderer=web_renderer,
+            spawn_fn=_web_spawn_fn,
         )
         console.print(f"[green]Web UI ready → http://{host}:{port}[/green]")
 
