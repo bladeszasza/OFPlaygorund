@@ -40,6 +40,9 @@ dmypy.json
 # Distribution / packaging
 MANIFEST
 
+# Worktrees
+.worktrees/
+
 # IDE
 .idea/
 .vscode/
