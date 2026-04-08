@@ -92,6 +92,7 @@ class FloorManager:
         self._showrunner_uri: Optional[str] = None
         self._orchestrator_uri: Optional[str] = None
         self._assigned_uri: Optional[str] = None  # currently assigned agent in showrunner_driven mode
+        self._parallel_batch: set[str] = set()  # URIs assigned simultaneously via [ASSIGN_PARALLEL]
         self._last_orchestrator_directive_text: str = ""  # suppress duplicate replay while assignment is in flight
         self._spawn_callback: Optional[callable] = None  # set externally after creation
         self._orchestrator_idle_grants: int = 0  # consecutive floor grants with no productive action
@@ -301,6 +302,22 @@ class FloorManager:
             except Exception as e:
                 logger.warning("Failed to parse manifest from %s: %s", sender_uri, e)
 
+    async def _maybe_return_floor_to_orchestrator(self) -> None:
+        """Return floor to orchestrator only when no parallel batch agents are still pending.
+
+        In parallel-assign mode, multiple agents are in-flight simultaneously.
+        Each one calls this helper when it finishes; only the last one actually
+        triggers the grant so the orchestrator doesn't regain the floor too early.
+        """
+        if self._parallel_batch:
+            return  # more agents still pending — hold the floor
+        if self._orchestrator_uri:
+            await self.grant_to(self._orchestrator_uri)
+            if self._renderer:
+                self._renderer.show_system_event(
+                    f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
+                )
+
     async def _handle_utterance(self, envelope: Envelope, event: UtteranceEvent) -> None:
         """Process an utterance: build typed Utterance, add to history, render."""
         sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
@@ -389,12 +406,9 @@ class FloorManager:
                     # Record for manuscript accumulation on [ACCEPT]
                     self._last_worker_text = cleaned_text
                     self._last_worker_name = sender_name
-                    self._assigned_uri = None  # clear assignment — orchestrator decides next
-                    await self.grant_to(self._orchestrator_uri)
-                    if self._renderer:
-                        self._renderer.show_system_event(
-                            f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
-                        )
+                    self._assigned_uri = None
+                    self._parallel_batch.discard(sender_uri)  # no-op in single-assign mode
+                    await self._maybe_return_floor_to_orchestrator()
                 else:
                     # Auto-accept media output — it cannot be text-verified via [ACCEPT]/[REJECT]
                     entry = (
@@ -403,12 +417,13 @@ class FloorManager:
                         else f"[{media_key} by {sender_name}]: {text}"
                     )
                     self._manuscript.append(entry)
+                    self._parallel_batch.discard(sender_uri)  # no-op in single-assign mode
                     self._assigned_uri = None
-                    await self.grant_to(self._orchestrator_uri)
                     if self._renderer:
                         self._renderer.show_system_event(
                             f"[Auto-accepted] {sender_name}'s {media_key} output"
                         )
+                    await self._maybe_return_floor_to_orchestrator()
             else:
                 # Existing round-boundary logic (showrunner / director / summary)
                 text_agents = {
@@ -511,6 +526,7 @@ class FloorManager:
 
         Directives (one per line):
             [ASSIGN AgentName]: task
+            [ASSIGN_PARALLEL Agent1, Agent2, ...]: task
             [ACCEPT]
             [REJECT AgentName]: reason
             [KICK AgentName]
@@ -639,6 +655,47 @@ class FloorManager:
                         f"Use [SPAWN ...] to create new agents or [ASSIGN] an existing one."
                     )
                     await self._send_directed_utterance(feedback, target_uri=self._orchestrator_uri)
+                continue
+
+            # [ASSIGN_PARALLEL Agent1, Agent2, ...]: task
+            # Dispatches the same task to multiple agents simultaneously.
+            # The orchestrator regains the floor only after ALL agents respond.
+            m = re.match(r"\[ASSIGN_PARALLEL\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            if m:
+                names_raw = m.group(1)
+                task = m.group(2).strip()
+                names = [n.strip() for n in names_raw.split(",") if n.strip()]
+                uris = [
+                    u for n in names
+                    if (u := self._resolve_agent_uri_by_name(n))
+                ]
+                if not uris:
+                    logger.warning("Orchestrator [ASSIGN_PARALLEL]: no valid agents in %s", names)
+                    await self._send_directed_utterance(
+                        f"[SYSTEM] [ASSIGN_PARALLEL] FAILED — none of {names} found on the floor.",
+                        target_uri=self._orchestrator_uri,
+                    )
+                    continue
+                # Parallel mode is mutually exclusive with single-assign mode
+                self._assigned_uri = None
+                self._parallel_batch = set(uris)
+                self._policy._request_queue.clear()
+                self._orchestrator_idle_grants = 0
+                if self._renderer:
+                    self._renderer.show_system_event(
+                        f"[Orchestrator → PARALLEL {names}]: {task[:60]}"
+                    )
+                # Dispatch directive to all agents simultaneously
+                async def _dispatch_parallel(uri: str, name: str, task: str = task) -> None:
+                    directive = f"[PARALLEL DIRECTIVE for {name}]: {task}"
+                    await self._send_directed_utterance(directive, target_uri=uri)
+                    await self.grant_to(uri)
+
+                agent_name_map = {u: self._agents.get(u, u) for u in uris}
+                await asyncio.gather(*[
+                    _dispatch_parallel(uri, agent_name_map[uri])
+                    for uri in uris
+                ])
                 continue
 
             # [ACCEPT]  — append last worker output to shared manuscript
@@ -975,10 +1032,13 @@ class FloorManager:
     async def _handle_request_floor(self, envelope: Envelope, event: RequestFloorEvent) -> None:
         sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
 
-        # In showrunner_driven mode only the assigned agent may request floor —
-        # all other requests are silently dropped to prevent queue pile-up.
+        # In showrunner_driven mode only the assigned agent (or any member of an
+        # active parallel batch) may request floor — all others are silently dropped.
         if self._orchestrator_uri:
-            if sender_uri not in (self._orchestrator_uri, self._assigned_uri):
+            if (
+                sender_uri not in (self._orchestrator_uri, self._assigned_uri)
+                and sender_uri not in self._parallel_batch
+            ):
                 return
 
         # If the agent already holds the floor (e.g. got it via round-robin just before
