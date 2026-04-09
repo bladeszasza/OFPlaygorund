@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +14,39 @@ from ofp_playground.bus.message_bus import MessageBus
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_GOOGLE = "gemini-3-flash-preview"
+
+_CODE_BLOCK_RE = re.compile(r"```(\w+)?\n(.*?)```", re.DOTALL)
+_EXT_MAP = {
+    "html": ".html",
+    "python": ".py", "py": ".py",
+    "javascript": ".js", "js": ".js",
+    "typescript": ".ts", "ts": ".ts",
+    "css": ".css",
+    "sql": ".sql",
+    "bash": ".sh", "sh": ".sh",
+    "json": ".json",
+    "xml": ".xml",
+    "yaml": ".yaml", "yml": ".yml",
+}
+
+
+def _save_code_blocks(text: str, output_dir: Path, agent_name: str) -> list[Path]:
+    """Extract fenced code blocks from *text* and write each to *output_dir*."""
+    saved: list[Path] = []
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    slug = re.sub(r"[^\w]+", "_", agent_name.lower())
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for i, m in enumerate(_CODE_BLOCK_RE.finditer(text)):
+        lang = (m.group(1) or "").lower().strip()
+        code = m.group(2).strip()
+        if not code:
+            continue
+        ext = _EXT_MAP.get(lang, ".txt")
+        suffix = f"_{i + 1}" if i > 0 else ""
+        path = output_dir / f"{ts}_{slug}{suffix}{ext}"
+        path.write_text(code, encoding="utf-8")
+        saved.append(path)
+    return saved
 
 
 class GoogleCodingAgent(BaseCodingAgent):
@@ -78,6 +113,8 @@ class GoogleCodingAgent(BaseCodingAgent):
                     if stdout:
                         output_parts.append(stdout)
 
-            return "\n".join(filter(None, output_parts)), []
+            output_text = "\n".join(filter(None, output_parts))
+            saved = _save_code_blocks(output_text, self._output_dir, self._name)
+            return output_text, saved
 
         return await loop.run_in_executor(None, _call)

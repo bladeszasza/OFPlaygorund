@@ -24,7 +24,8 @@ _EVENT_COLORS = {
 def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
     """Write a self-contained timeline graph (HTML) for the captured trace."""
     payload = collector.to_dict()
-    payload_json = json.dumps(payload)
+    # Escape </ so </script> inside string values doesn't terminate the <script> block.
+    payload_json = json.dumps(payload).replace("</", "<\\/")
     colors_json = json.dumps(_EVENT_COLORS)
     generated_at = datetime.now().isoformat(timespec="seconds")
 
