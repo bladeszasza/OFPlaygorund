@@ -553,8 +553,8 @@ async def _spawn_llm_agent(
             )
             floor.register_orchestrator(agent.speaker_uri)
         elif task == "code-generation":
-            from ofp_playground.agents.llm.codex import CodingAgent
-            agent = CodingAgent(
+            from ofp_playground.agents.llm.anthropic_coding import AnthropicCodingAgent
+            agent = AnthropicCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
                 api_key=api_key,
@@ -628,8 +628,8 @@ async def _spawn_llm_agent(
             )
             floor.register_orchestrator(agent.speaker_uri)
         elif task == "code-generation":
-            from ofp_playground.agents.llm.codex import CodingAgent
-            agent = CodingAgent(
+            from ofp_playground.agents.llm.codex import OpenAICodingAgent
+            agent = OpenAICodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
                 api_key=api_key,
@@ -713,8 +713,8 @@ async def _spawn_llm_agent(
             )
             floor.register_orchestrator(agent.speaker_uri)
         elif task == "code-generation":
-            from ofp_playground.agents.llm.codex import CodingAgent
-            agent = CodingAgent(
+            from ofp_playground.agents.llm.google_coding import GoogleCodingAgent
+            agent = GoogleCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
                 api_key=api_key,
@@ -879,13 +879,11 @@ async def _spawn_llm_agent(
             )
             floor.register_orchestrator(agent.speaker_uri)
         elif task == "code-generation":
-            from ofp_playground.agents.llm.codex import CodingAgent
-            agent = CodingAgent(
-                name=name, synopsis=description, bus=bus,
-                conversation_id=floor.conversation_id,
-                api_key=api_key,
-                model=model_override or None,
+            renderer.show_system_event(
+                "HuggingFace code-generation is not supported. "
+                "Use anthropic:code-generation, openai:code-generation, or google:code-generation."
             )
+            return
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
