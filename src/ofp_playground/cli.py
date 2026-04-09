@@ -557,7 +557,7 @@ async def _spawn_llm_agent(
             agent = CodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="anthropic",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
@@ -632,7 +632,7 @@ async def _spawn_llm_agent(
             agent = CodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="openai",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
@@ -717,7 +717,7 @@ async def _spawn_llm_agent(
             agent = CodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="google",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
@@ -883,7 +883,7 @@ async def _spawn_llm_agent(
             agent = CodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="hf",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:

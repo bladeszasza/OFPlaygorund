@@ -14,7 +14,7 @@ from ofp_playground.bus.message_bus import FLOOR_MANAGER_URI, MessageBus
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_agent(tmp_path, provider="openai"):
+def _make_agent(tmp_path):
     from ofp_playground.agents.llm.codex import CodingAgent
     a = CodingAgent(
         name="Coder",
@@ -22,7 +22,6 @@ def _make_agent(tmp_path, provider="openai"):
         bus=MessageBus(),
         conversation_id="test-conv-1",
         api_key="test-key",
-        provider=provider,
     )
     a._output_dir = tmp_path / "ofp-code"
     a._output_dir.mkdir()
@@ -68,7 +67,7 @@ def test_output_dir_created(tmp_path, monkeypatch):
     from ofp_playground.agents.llm.codex import CodingAgent
     CodingAgent(
         name="C", synopsis="s", bus=MessageBus(),
-        conversation_id="c", api_key="k", provider="openai",
+        conversation_id="c", api_key="k",
     )
     assert target.exists()
 
@@ -95,12 +94,6 @@ async def test_ignores_own_utterance(tmp_path):
     await agent._handle_utterance(envelope)
     assert agent._task_directive == ""
 
-
-@pytest.mark.asyncio
-async def test_unsupported_provider_raises(tmp_path):
-    agent = _make_agent(tmp_path, provider="anthropic")
-    with pytest.raises(NotImplementedError, match="not yet implemented"):
-        await agent._handle_grant_floor()
 
 
 @pytest.mark.asyncio
@@ -164,7 +157,7 @@ async def test_files_saved_to_ofp_code(tmp_path):
     agent.send_private_utterance = AsyncMock()
 
     with patch("openai.AsyncOpenAI", return_value=mock_client):
-        _, saved = await agent._run_openai_coding_loop("test context")
+        _, saved = await agent._run_code_loop("test context")
 
     stream_kwargs = mock_client.responses.stream.call_args.kwargs
     assert stream_kwargs["tools"][0]["container"] == {"type": "auto"}
@@ -194,7 +187,7 @@ async def test_retry_without_tools_directive_omits_tools_payload(tmp_path):
     mock_client.files.content = AsyncMock()
 
     with patch("openai.AsyncOpenAI", return_value=mock_client):
-        output, saved = await agent._run_openai_coding_loop("test context")
+        output, saved = await agent._run_code_loop("test context")
 
     stream_kwargs = mock_client.responses.stream.call_args.kwargs
     assert "tools" not in stream_kwargs
