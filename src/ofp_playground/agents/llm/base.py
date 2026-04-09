@@ -77,6 +77,26 @@ class BaseLLMAgent(BasePlaygroundAgent):
         return "text-generation"
 
     def _build_manifest(self) -> Manifest:
+        from ofp_playground.agents.llm.model_catalog import MODEL_CATALOG
+        caps = MODEL_CATALOG.get(self._model) if self._model else None
+
+        if caps:
+            keyphrases = list(caps.modalities_in) + list(caps.features) + list(caps.tools)
+            if self.task_type not in keyphrases:
+                keyphrases.insert(0, self.task_type)
+            description = (
+                f"{self._synopsis} | model: {self._model} | "
+                f"context: {caps.context_window:,} tokens"
+            )
+            supported_layers = SupportedLayers(
+                input=list(caps.modalities_in),
+                output=list(caps.modalities_out),
+            )
+        else:
+            keyphrases = [self.task_type]
+            description = self._synopsis
+            supported_layers = SupportedLayers(input=["text"], output=["text"])
+
         return Manifest(
             identification=Identification(
                 speakerUri=self._speaker_uri,
@@ -86,9 +106,9 @@ class BaseLLMAgent(BasePlaygroundAgent):
             ),
             capabilities=[
                 Capability(
-                    keyphrases=[self.task_type],
-                    descriptions=[self._synopsis],
-                    supportedLayers=SupportedLayers(input=["text"], output=["text"]),
+                    keyphrases=keyphrases,
+                    descriptions=[description],
+                    supportedLayers=supported_layers,
                 )
             ],
         )
