@@ -79,8 +79,8 @@ type:subtype:name[:description[:model]]
 # Orchestrator
 --agent "anthropic:orchestrator:Director:You drive the pipeline.:claude-sonnet-4-6"
 
-# Web page generator
---agent "openai:web-page-generation:WebShowcase:Generate HTML pages"
+# Coding agent
+--agent "openai:code-generation:CodeFixer:You are a coding agent. Implement the assigned task."
 ```
 
 ### Flag Format
@@ -132,9 +132,7 @@ type:subtype:name[:description[:model]]
 | `summarization` | Text summarization | HF |
 | `orchestrator` | Orchestrator (SHOWRUNNER_DRIVEN) | All |
 | `showrunner` | ShowRunner (ROUND_ROBIN) | HF |
-| `web-page-generation` | HTML page generator | All |
-| `web-page` | Alias for web-page-generation | All |
-| `web-showcase` | Legacy alias for web-page-generation | All |
+| `code-generation` | General-purpose coding agent | OpenAI (full), others stub |
 
 ---
 

@@ -9,6 +9,17 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+import click
+from rich.console import Console
+
+from ofp_playground.agents.human import HumanAgent
+from ofp_playground.agents.registry import AgentRegistry
+from ofp_playground.bus.message_bus import MessageBus
+from ofp_playground.config.settings import Settings
+from ofp_playground.floor.manager import FloorManager
+from ofp_playground.floor.policy import FloorPolicy
+from ofp_playground.renderer.terminal import TerminalRenderer
+
 logger = logging.getLogger(__name__)
 
 # Noisy third-party loggers to silence even in verbose mode
@@ -26,18 +37,6 @@ def _configure_logging(verbose: bool) -> None:
         logging.getLogger("ofp_playground").setLevel(logging.DEBUG)
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-
-
-import click
-from rich.console import Console
-
-from ofp_playground.bus.message_bus import MessageBus
-from ofp_playground.config.settings import Settings
-from ofp_playground.floor.manager import FloorManager
-from ofp_playground.floor.policy import FloorPolicy
-from ofp_playground.renderer.terminal import TerminalRenderer
-from ofp_playground.agents.human import HumanAgent
-from ofp_playground.agents.registry import AgentRegistry
 
 console = Console()
 
@@ -117,6 +116,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
             raise click.BadParameter(f"Missing -provider in agent spec: {spec}")
         if not name:
             raise click.BadParameter(f"Missing -name in agent spec: {spec}")
+        description = _resolve_agent_slug(description)
         return agent_type, name, description, model_override, max_tokens_override, timeout_override, max_retries_override
 
     # Colon-separated format.
@@ -128,7 +128,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         "image-text-to-text", "image-classification", "object-detection",
         "image-segmentation", "token-classification", "text-classification",
         "summarization", "showrunner", "orchestrator",
-        "web-page", "web-page-generation", "web-showcase",
+        "code-generation",
     }
     def _looks_like_model_id(s: str) -> bool:
         """Return True only if s looks like a model identifier (no whitespace, ≤256 chars)."""
@@ -178,7 +178,25 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         else:
             description = f"I am {name}, an AI assistant."
             model_override = None
+    description = _resolve_agent_slug(description)
     return agent_type, name, description, model_override, None, None, 0
+
+
+def _resolve_agent_slug(description: str) -> str:
+    """If description starts with '@', resolve it to the matching SOUL.md content.
+
+    Examples::
+
+        @creative/brand-designer   → reads agents/creative/brand-designer/SOUL.md
+        @marketing/copywriter      → reads agents/marketing/copywriter/SOUL.md
+    """
+    if not description or not description.startswith("@"):
+        return description
+    try:
+        from ofp_playground.agents.library import resolve_slug
+        return resolve_slug(description)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 def _resolve_remote(slug_or_url: str) -> tuple[str, str]:
@@ -534,17 +552,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.anthropic_coding import AnthropicCodingAgent
+            agent = AnthropicCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="anthropic",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown Anthropic task: {task}. Use anthropic for text-generation, image-to-text, orchestrator, or web-page-generation."
+                f"Unknown Anthropic task: {task}. Use anthropic for text-generation, image-to-text, orchestrator, or code-generation."
             )
             return
 
@@ -609,17 +627,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.codex import OpenAICodingAgent
+            agent = OpenAICodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="openai",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, text-to-video, image-to-text, orchestrator, or web-page-generation."
+                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, text-to-video, image-to-text, orchestrator, or code-generation."
             )
             return
 
@@ -694,17 +712,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.google_coding import GoogleCodingAgent
+            agent = GoogleCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="google",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, text-to-music, text-to-video, orchestrator, or web-page-generation."
+                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, text-to-music, text-to-video, orchestrator, or code-generation."
             )
             return
 
@@ -860,14 +878,12 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
-                name=name, synopsis=description, bus=bus,
-                conversation_id=floor.conversation_id,
-                api_key=api_key, provider="hf",
-                model=model_override or None,
+        elif task == "code-generation":
+            renderer.show_system_event(
+                "HuggingFace code-generation is not supported. "
+                "Use anthropic:code-generation, openai:code-generation, or google:code-generation."
             )
+            return
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
@@ -927,8 +943,8 @@ async def _spawn_llm_agent(
                 agent._output_dir = out.videos
             elif task in ("text-to-music",):
                 agent._output_dir = out.music
-            elif task in ("web-page", "web-page-generation", "web-showcase"):
-                agent._output_dir = out.web
+            elif task == "code-generation":
+                agent._output_dir = out.sandbox
             else:
                 agent._output_dir = out.root
             agent._output_dir.mkdir(parents=True, exist_ok=True)
@@ -1243,7 +1259,7 @@ async def _run_web_session(
     _human_uris: set[str] = set()
     web_renderer = GradioRenderer(agent_names={}, human_uris=_human_uris)
     web_renderer.add_system_event(
-        f"Running in autonomous mode" if no_human else "Interactive mode"
+        "Running in autonomous mode" if no_human else "Interactive mode"
     )
     web_renderer.add_system_event(f"Conversation started (ID: {floor.conversation_id[:8]}...)")
 
@@ -1309,6 +1325,18 @@ async def _run_web_session(
     # Get the running loop and launch Gradio from this coroutine's thread
     loop = asyncio.get_event_loop()
 
+    async def _web_spawn_fn(spec: str) -> None:
+        """Spawn an agent from the Gradio UI into the running session."""
+        try:
+            at, name, desc, model_ov, maxtok_ov, timeout_ov, maxretry_ov = _parse_agent_spec(spec)
+            await _spawn_llm_agent(
+                at, name, desc, floor, bus, registry,
+                term_renderer, settings, model_ov, maxtok_ov,
+                web_renderer=web_renderer,
+            )
+        except Exception as e:
+            web_renderer.add_system_event(f"Spawn failed: {e}")
+
     def _launch():
         launch_web_session(
             floor=floor,
@@ -1321,6 +1349,7 @@ async def _run_web_session(
             port=port,
             share=share,
             gradio_renderer=web_renderer,
+            spawn_fn=_web_spawn_fn,
         )
         console.print(f"[green]Web UI ready → http://{host}:{port}[/green]")
 
@@ -1404,7 +1433,7 @@ def validate(envelope_file: str):
         of_data = data.get("openFloor", data)
         from openfloor import Envelope
         envelope = Envelope(**of_data)
-        console.print(f"[green]✓ Valid OFP envelope[/green]")
+        console.print("[green]✓ Valid OFP envelope[/green]")
         console.print(f"  Conversation: {envelope.conversation.id if envelope.conversation else 'N/A'}")
         console.print(f"  Sender: {envelope.sender.speakerUri if envelope.sender else 'N/A'}")
         console.print(f"  Events: {len(envelope.events or [])}")

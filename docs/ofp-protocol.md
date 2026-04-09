@@ -201,7 +201,7 @@ Manifest(
 | Video agents | `["text-to-video", "video-generation"]` |
 | Music agents | `["text-to-music", "music-generation", "lyria"]` |
 | Vision agents | `["image-to-text", "vision"]` |
-| WebPageAgent | `["web-page-generation"]` |
+| CodingAgent | `["code-generation"]` |
 | Orchestrator agents | `["orchestration", "task-management", ...]` |
 
 ## How the Playground Uses OFP

@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 FLOOR_MANAGER_NAME = "Floor Manager"
 FLOOR_MANAGER_URI_STR = FLOOR_MANAGER_URI
+ORCHESTRATOR_RECOVERY_BASE_DELAY_S = 0.5
+ORCHESTRATOR_RECOVERY_MAX_DELAY_S = 3.0
 
 
 def make_floor_manager_manifest() -> Manifest:
@@ -90,6 +92,8 @@ class FloorManager:
         self._showrunner_uri: Optional[str] = None
         self._orchestrator_uri: Optional[str] = None
         self._assigned_uri: Optional[str] = None  # currently assigned agent in showrunner_driven mode
+        self._parallel_batch: set[str] = set()  # URIs assigned simultaneously via [ASSIGN_PARALLEL]
+        self._last_orchestrator_directive_text: str = ""  # suppress duplicate replay while assignment is in flight
         self._spawn_callback: Optional[callable] = None  # set externally after creation
         self._orchestrator_idle_grants: int = 0  # consecutive floor grants with no productive action
         self._skip_next_orchestrator_yield: bool = False  # absorb stale yieldFloor after breakout re-grant
@@ -298,6 +302,22 @@ class FloorManager:
             except Exception as e:
                 logger.warning("Failed to parse manifest from %s: %s", sender_uri, e)
 
+    async def _maybe_return_floor_to_orchestrator(self) -> None:
+        """Return floor to orchestrator only when no parallel batch agents are still pending.
+
+        In parallel-assign mode, multiple agents are in-flight simultaneously.
+        Each one calls this helper when it finishes; only the last one actually
+        triggers the grant so the orchestrator doesn't regain the floor too early.
+        """
+        if self._parallel_batch:
+            return  # more agents still pending — hold the floor
+        if self._orchestrator_uri:
+            await self.grant_to(self._orchestrator_uri)
+            if self._renderer:
+                self._renderer.show_system_event(
+                    f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
+                )
+
     async def _handle_utterance(self, envelope: Envelope, event: UtteranceEvent) -> None:
         """Process an utterance: build typed Utterance, add to history, render."""
         sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
@@ -321,6 +341,30 @@ class FloorManager:
                     media_path = feat.tokens[0].value
                     break
 
+        # Coding agents send private liveness whispers (e.g. "Running code_interpreter...").
+        # Those are not completed worker outputs and must not return the floor.
+        if (
+            self._orchestrator_uri
+            and self._assigned_uri
+            and sender_uri == self._assigned_uri
+            and text
+            and text.startswith(f"[{sender_name}]")
+            and any(
+                marker in text
+                for marker in (
+                    "Starting coding task",
+                    "Running code_interpreter",
+                    "Output:",
+                    "Saved ",
+                    "Directive requested text-only mode",
+                    "Tool mode unavailable, retrying without tools",
+                )
+            )
+        ):
+            if self._renderer:
+                self._renderer.show_system_event(text)
+            return
+
         # Build typed Utterance and store in history
         if media_key == "image" and media_path:
             utterance = Utterance.from_image(sender_uri, sender_name, text, media_path)
@@ -335,6 +379,11 @@ class FloorManager:
         # SHOWRUNNER_DRIVEN: orchestrator utterance → parse its directives
         # ----------------------------------------------------------------
         if self._orchestrator_uri and sender_uri == self._orchestrator_uri:
+            # Suppress replayed duplicate directives while a worker assignment is pending.
+            if self._assigned_uri and text == self._last_orchestrator_directive_text:
+                logger.debug("Ignoring duplicate orchestrator directives while assignment is pending")
+                return
+            self._last_orchestrator_directive_text = text
             self._orchestrator_idle_grants = 0  # any response resets the nudge sequence
             if self._renderer:
                 self._renderer.show_utterance(
@@ -357,12 +406,9 @@ class FloorManager:
                     # Record for manuscript accumulation on [ACCEPT]
                     self._last_worker_text = cleaned_text
                     self._last_worker_name = sender_name
-                    self._assigned_uri = None  # clear assignment — orchestrator decides next
-                    await self.grant_to(self._orchestrator_uri)
-                    if self._renderer:
-                        self._renderer.show_system_event(
-                            f"Floor returned to {self._agents.get(self._orchestrator_uri, 'Orchestrator')}"
-                        )
+                    self._assigned_uri = None
+                    self._parallel_batch.discard(sender_uri)  # no-op in single-assign mode
+                    await self._maybe_return_floor_to_orchestrator()
                 else:
                     # Auto-accept media output — it cannot be text-verified via [ACCEPT]/[REJECT]
                     entry = (
@@ -371,12 +417,13 @@ class FloorManager:
                         else f"[{media_key} by {sender_name}]: {text}"
                     )
                     self._manuscript.append(entry)
+                    self._parallel_batch.discard(sender_uri)  # no-op in single-assign mode
                     self._assigned_uri = None
-                    await self.grant_to(self._orchestrator_uri)
                     if self._renderer:
                         self._renderer.show_system_event(
                             f"[Auto-accepted] {sender_name}'s {media_key} output"
                         )
+                    await self._maybe_return_floor_to_orchestrator()
             else:
                 # Existing round-boundary logic (showrunner / director / summary)
                 text_agents = {
@@ -479,6 +526,7 @@ class FloorManager:
 
         Directives (one per line):
             [ASSIGN AgentName]: task
+            [ASSIGN_PARALLEL Agent1, Agent2, ...]: task
             [ACCEPT]
             [REJECT AgentName]: reason
             [KICK AgentName]
@@ -488,6 +536,9 @@ class FloorManager:
             [TASK_COMPLETE]
         """
         import re
+
+        # Strip hallucinated model formatting artifacts (e.g. numerusform{...})
+        text = re.sub(r'numerusform\{[^}]*\}', '', text)
 
         assigned_in_batch = False  # guard: only one [ASSIGN] per directive batch
         breakout_header: Optional[dict] = None  # parsed from [BREAKOUT ...]
@@ -551,6 +602,7 @@ class FloorManager:
                     assigned_in_batch = True
                     # Track who is assigned so _handle_request_floor can filter others
                     self._assigned_uri = target_uri
+                    self._last_orchestrator_directive_text = line
                     # Flush any stale queue entries from agents that saw the orchestrator utterance
                     self._policy._request_queue.clear()
                     # Build directive, injecting manuscript context for local LLM agents only.
@@ -603,6 +655,47 @@ class FloorManager:
                         f"Use [SPAWN ...] to create new agents or [ASSIGN] an existing one."
                     )
                     await self._send_directed_utterance(feedback, target_uri=self._orchestrator_uri)
+                continue
+
+            # [ASSIGN_PARALLEL Agent1, Agent2, ...]: task
+            # Dispatches the same task to multiple agents simultaneously.
+            # The orchestrator regains the floor only after ALL agents respond.
+            m = re.match(r"\[ASSIGN_PARALLEL\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            if m:
+                names_raw = m.group(1)
+                task = m.group(2).strip()
+                names = [n.strip() for n in names_raw.split(",") if n.strip()]
+                uris = [
+                    u for n in names
+                    if (u := self._resolve_agent_uri_by_name(n))
+                ]
+                if not uris:
+                    logger.warning("Orchestrator [ASSIGN_PARALLEL]: no valid agents in %s", names)
+                    await self._send_directed_utterance(
+                        f"[SYSTEM] [ASSIGN_PARALLEL] FAILED — none of {names} found on the floor.",
+                        target_uri=self._orchestrator_uri,
+                    )
+                    continue
+                # Parallel mode is mutually exclusive with single-assign mode
+                self._assigned_uri = None
+                self._parallel_batch = set(uris)
+                self._policy._request_queue.clear()
+                self._orchestrator_idle_grants = 0
+                if self._renderer:
+                    self._renderer.show_system_event(
+                        f"[Orchestrator → PARALLEL {names}]: {task[:60]}"
+                    )
+                # Dispatch directive to all agents simultaneously
+                async def _dispatch_parallel(uri: str, name: str, task: str = task) -> None:
+                    directive = f"[PARALLEL DIRECTIVE for {name}]: {task}"
+                    await self._send_directed_utterance(directive, target_uri=uri)
+                    await self.grant_to(uri)
+
+                agent_name_map = {u: self._agents.get(u, u) for u in uris}
+                await asyncio.gather(*[
+                    _dispatch_parallel(uri, agent_name_map[uri])
+                    for uri in uris
+                ])
                 continue
 
             # [ACCEPT]  — append last worker output to shared manuscript
@@ -723,6 +816,34 @@ class FloorManager:
         if breakout_header and breakout_agent_specs:
             await self._execute_breakout(breakout_header, breakout_agent_specs)
 
+    @staticmethod
+    def _breakout_topic_keywords(topic: str) -> set[str]:
+        """Extract normalised keywords from a breakout topic string."""
+        import re as _re
+        _STOP = {
+            "and", "or", "the", "for", "of", "in", "to", "a", "an", "on",
+            "is", "are", "was", "were", "be", "been", "with", "from", "by",
+            "at", "as", "its", "it", "how", "what", "when", "where", "why",
+            "versus", "vs", "that", "this", "which", "into",
+        }
+        words = set(_re.findall(r"[a-z0-9]+", topic.lower()))
+        return words - _STOP
+
+    def _find_duplicate_breakout(self, topic: str) -> Optional[str]:
+        """Return the key of an existing breakout whose topic overlaps significantly."""
+        from ofp_playground.memory.store import MemoryCategory
+        new_kw = self._breakout_topic_keywords(topic)
+        if not new_kw:
+            return None
+        for entry in self._memory_store.recall(category=MemoryCategory.BREAKOUTS):
+            existing_kw = self._breakout_topic_keywords(entry.key)
+            if not existing_kw:
+                continue
+            overlap = len(new_kw & existing_kw) / min(len(new_kw), len(existing_kw))
+            if overlap >= 0.6:
+                return entry.key
+        return None
+
     async def _execute_breakout(self, header: dict, agent_specs: list[str]) -> None:
         """Spawn temporary agents, run a breakout session, inject result.
 
@@ -732,6 +853,27 @@ class FloorManager:
         topic = header["topic"]
         policy_str = header["policy"]
         max_rounds = min(max(header["max_rounds"], 2), 20)
+
+        # ── Deduplication: reject topics that overlap heavily with prior breakouts ──
+        existing = self._find_duplicate_breakout(topic)
+        if existing:
+            logger.warning(
+                "Orchestrator [BREAKOUT]: topic '%s' duplicates completed breakout '%s' — skipping",
+                topic, existing,
+            )
+            feedback = (
+                f"[SYSTEM] Breakout topic \"{topic}\" is too similar to already-completed "
+                f"breakout \"{existing}\". Choose a substantially different angle or "
+                f"move to the next phase of your mission."
+            )
+            await self._send_directed_utterance(feedback, target_uri=self._orchestrator_uri)
+            self._skip_next_orchestrator_yield = True
+            await self.grant_to(self._orchestrator_uri)
+            if self._renderer:
+                self._renderer.show_system_event(
+                    f"[Orchestrator] Breakout skipped — duplicate of '{existing[:60]}'"
+                )
+            return
 
         try:
             policy = FloorPolicy(policy_str)
@@ -765,6 +907,16 @@ class FloorManager:
             self._pending_breakout_file = artifact_path  # injected into next ASSIGN directive
         else:
             compact_text = callback_result
+
+        # ── Record completed breakout topic in session memory for dedup ──
+        from ofp_playground.memory.store import MemoryCategory
+        summary_preview = (compact_text or "")[:200]
+        self._memory_store.store(
+            category=MemoryCategory.BREAKOUTS,
+            key=topic,
+            content=f"Completed. {summary_preview}",
+            author="system",
+        )
 
         # Breakout output is context-only — do NOT set _last_worker_text so
         # it cannot be [ACCEPT]-ed into the manuscript.
@@ -880,10 +1032,13 @@ class FloorManager:
     async def _handle_request_floor(self, envelope: Envelope, event: RequestFloorEvent) -> None:
         sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
 
-        # In showrunner_driven mode only the assigned agent may request floor —
-        # all other requests are silently dropped to prevent queue pile-up.
+        # In showrunner_driven mode only the assigned agent (or any member of an
+        # active parallel batch) may request floor — all others are silently dropped.
         if self._orchestrator_uri:
-            if sender_uri not in (self._orchestrator_uri, self._assigned_uri):
+            if (
+                sender_uri not in (self._orchestrator_uri, self._assigned_uri)
+                and sender_uri not in self._parallel_batch
+            ):
                 return
 
         # If the agent already holds the floor (e.g. got it via round-robin just before
@@ -949,6 +1104,12 @@ class FloorManager:
                 self._renderer.show_system_event(
                     f"[Orchestrator] Recovery nudge #{self._orchestrator_idle_grants} sent"
                 )
+            backoff = min(
+                ORCHESTRATOR_RECOVERY_BASE_DELAY_S * self._orchestrator_idle_grants,
+                ORCHESTRATOR_RECOVERY_MAX_DELAY_S,
+            )
+            if backoff > 0:
+                await asyncio.sleep(backoff)
             await self._grant_floor(self._orchestrator_uri)
 
     async def process_envelope(self, envelope: Envelope) -> None:

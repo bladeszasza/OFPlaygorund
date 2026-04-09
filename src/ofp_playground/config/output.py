@@ -7,7 +7,7 @@ Each conversation session gets its own folder under ``result/``::
         ├── images/
         ├── videos/
         ├── music/
-        ├── web/
+        ├── code/
         ├── breakout/
         ├── manuscript.txt
         └── memory.json
@@ -64,7 +64,19 @@ class SessionOutputManager:
         return d
 
     @property
+    def code(self) -> Path:
+        d = self._root / "code"
+        d.mkdir(exist_ok=True)
+        return d
+
+    @property
     def breakout(self) -> Path:
         d = self._root / "breakout"
+        d.mkdir(exist_ok=True)
+        return d
+
+    @property
+    def sandbox(self) -> Path:
+        d = self._root / "sandbox"
         d.mkdir(exist_ok=True)
         return d

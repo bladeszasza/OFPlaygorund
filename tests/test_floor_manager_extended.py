@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from ofp_playground.bus.message_bus import MessageBus, FLOOR_MANAGER_URI
@@ -213,3 +215,193 @@ class TestAssignDirective:
         bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
         # Should not raise even if the agent isn't registered
         await fm._handle_orchestrator_directives("[ASSIGN PhantomAgent]: Some task")
+
+
+class TestOrchestratorRecoveryBackoff:
+    @pytest.mark.asyncio
+    async def test_recovery_nudge_waits_before_regrant(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        from openfloor import Conversation, Envelope, Sender
+        envelope = Envelope(
+            sender=Sender(speakerUri=orc_uri, serviceUrl="local://orchestrator"),
+            conversation=Conversation(id=fm.conversation_id),
+            events=[],
+        )
+
+        fm._policy.grant_to(orc_uri)
+        fm._assigned_uri = None
+        fm._send_directed_utterance = AsyncMock()
+        fm._grant_floor = AsyncMock()
+
+        with patch("ofp_playground.floor.manager.asyncio.sleep", new_callable=AsyncMock) as sleep_mock:
+            await fm._handle_yield_floor(envelope)
+
+        sleep_mock.assert_awaited_once_with(0.5)
+        fm._send_directed_utterance.assert_awaited_once()
+        fm._grant_floor.assert_awaited_once_with(orc_uri)
+
+
+class TestShowrunnerDuplicateSuppression:
+    @pytest.mark.asyncio
+    async def test_coding_progress_does_not_return_floor(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        worker_uri = "tag:test:igor"
+        fm.register_agent(worker_uri, "Igor")
+        fm._assigned_uri = worker_uri
+        fm.grant_to = AsyncMock()
+
+        from openfloor import Conversation, DialogEvent, Envelope, Sender, TextFeature, Token, UtteranceEvent
+        envelope = Envelope(
+            sender=Sender(speakerUri=worker_uri, serviceUrl="local://worker"),
+            conversation=Conversation(id=fm.conversation_id),
+            events=[],
+        )
+        event = UtteranceEvent(
+            dialogEvent=DialogEvent(
+                id="evt-progress",
+                speakerUri=worker_uri,
+                features={
+                    "text": TextFeature(mimeType="text/plain", tokens=[Token(value="[Igor] Running code_interpreter...")])
+                },
+            )
+        )
+
+        await fm._handle_utterance(envelope, event)
+
+        fm.grant_to.assert_not_called()
+        assert fm._assigned_uri == worker_uri
+
+    @pytest.mark.asyncio
+    async def test_duplicate_orchestrator_directive_ignored_while_assigned(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        worker_uri = "tag:test:csabi"
+        fm.register_agent(worker_uri, "Csabi")
+        fm._assigned_uri = worker_uri
+        fm._handle_orchestrator_directives = AsyncMock()
+
+        from openfloor import Conversation, DialogEvent, Envelope, Sender, TextFeature, Token, UtteranceEvent
+        text = "[ACCEPT]\n[ASSIGN Csabi]: Define product frame in 200 words."
+        envelope = Envelope(
+            sender=Sender(speakerUri=orc_uri, serviceUrl="local://orchestrator"),
+            conversation=Conversation(id=fm.conversation_id),
+            events=[],
+        )
+        event = UtteranceEvent(
+            dialogEvent=DialogEvent(
+                id="evt-dup",
+                speakerUri=orc_uri,
+                features={
+                    "text": TextFeature(mimeType="text/plain", tokens=[Token(value=text)])
+                },
+            )
+        )
+
+        await fm._handle_utterance(envelope, event)
+        await fm._handle_utterance(envelope, event)
+
+        fm._handle_orchestrator_directives.assert_awaited_once_with(text)
+
+
+# ---------------------------------------------------------------------------
+# [ASSIGN_PARALLEL] directive
+# ---------------------------------------------------------------------------
+
+class TestAssignParallelDirective:
+    @pytest.mark.asyncio
+    async def test_parallel_batch_populated(self):
+        """[ASSIGN_PARALLEL] should populate _parallel_batch with all named agent URIs."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        aurora_q: asyncio.Queue = asyncio.Queue()
+        vertex_q: asyncio.Queue = asyncio.Queue()
+        await bus.register("tag:test:aurora", aurora_q)
+        await bus.register("tag:test:vertex", vertex_q)
+        fm.register_agent("tag:test:aurora", "Aurora")
+        fm.register_agent("tag:test:vertex", "Vertex")
+
+        await fm._handle_orchestrator_directives(
+            "[ASSIGN_PARALLEL Aurora, Vertex]: Draw a neon runway at night."
+        )
+
+        assert "tag:test:aurora" in fm._parallel_batch
+        assert "tag:test:vertex" in fm._parallel_batch
+        assert fm._assigned_uri is None  # single-assign cleared
+
+    @pytest.mark.asyncio
+    async def test_parallel_batch_unknown_agent_skipped(self):
+        """Unknown agent names in [ASSIGN_PARALLEL] should be silently skipped."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        aurora_q: asyncio.Queue = asyncio.Queue()
+        await bus.register("tag:test:aurora", aurora_q)
+        fm.register_agent("tag:test:aurora", "Aurora")
+
+        await fm._handle_orchestrator_directives(
+            "[ASSIGN_PARALLEL Aurora, Ghost]: some prompt"
+        )
+
+        assert "tag:test:aurora" in fm._parallel_batch
+        # Ghost never registered — batch contains only Aurora
+        assert len(fm._parallel_batch) == 1
+
+    @pytest.mark.asyncio
+    async def test_floor_held_until_all_parallel_agents_respond(self):
+        """Floor should return to orchestrator only after ALL parallel batch members respond."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        aurora_q: asyncio.Queue = asyncio.Queue()
+        vertex_q: asyncio.Queue = asyncio.Queue()
+        aurora_uri = "tag:test:aurora"
+        vertex_uri = "tag:test:vertex"
+        await bus.register(aurora_uri, aurora_q)
+        await bus.register(vertex_uri, vertex_q)
+        fm.register_agent(aurora_uri, "Aurora")
+        fm.register_agent(vertex_uri, "Vertex")
+
+        # Seed parallel batch manually (simulates after [ASSIGN_PARALLEL] is parsed)
+        fm._parallel_batch = {aurora_uri, vertex_uri}
+
+        grant_calls: list[str] = []
+        original_grant = fm.grant_to
+        async def mock_grant(uri):
+            grant_calls.append(uri)
+        fm.grant_to = mock_grant
+
+        # First agent responds — floor should NOT return yet
+        fm._parallel_batch.discard(aurora_uri)
+        await fm._maybe_return_floor_to_orchestrator()
+        assert orc_uri not in grant_calls, "Floor returned too early after first of two agents"
+
+        # Second agent responds — NOW floor should return
+        fm._parallel_batch.discard(vertex_uri)
+        await fm._maybe_return_floor_to_orchestrator()
+        assert orc_uri in grant_calls, "Floor not returned after final parallel agent responded"
+
+    @pytest.mark.asyncio
+    async def test_maybe_return_noop_when_batch_nonempty(self):
+        """_maybe_return_floor_to_orchestrator is a no-op while batch still has members."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._parallel_batch = {"tag:test:pending"}
+
+        grants: list[str] = []
+        fm.grant_to = AsyncMock(side_effect=lambda uri: grants.append(uri))
+
+        await fm._maybe_return_floor_to_orchestrator()
+
+        assert not grants  # no grant issued
+
+    @pytest.mark.asyncio
+    async def test_maybe_return_grants_when_batch_empty(self):
+        """_maybe_return_floor_to_orchestrator grants to orchestrator when batch is empty."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._parallel_batch = set()  # empty — all done
+
+        grants: list[str] = []
+        fm.grant_to = AsyncMock(side_effect=lambda uri: grants.append(uri))
+
+        await fm._maybe_return_floor_to_orchestrator()
+
+        assert orc_uri in grants

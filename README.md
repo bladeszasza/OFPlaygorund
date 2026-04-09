@@ -114,7 +114,7 @@ Full table in [docs/agents.md](docs/agents.md).
 | Google | `google` / `gemini` | `gemini-3.1-flash-lite-preview` |
 | HuggingFace | `hf` / `huggingface` | `MiniMaxAI/MiniMax-M2.5` |
 
-Supported task types across providers: text generation, image generation, image-to-text (vision), text-to-music, text-to-video, web-page-generation, classification, NER, summarization, orchestrator.
+Supported task types across providers: text generation, image generation, image-to-text (vision), text-to-music, text-to-video, code-generation, classification, NER, summarization, orchestrator.
 
 ---
 
@@ -231,7 +231,7 @@ src/ofp_playground/
 │       ├── openai.py           # OpenAI GPT (text + image)
 │       ├── google.py           # Google Gemini (text + image + music)
 │       ├── huggingface.py      # HuggingFace (text + image + video + perception)
-│       ├── web_page.py         # Web page generation agent
+│       ├── codex.py            # CodingAgent — code generation (OpenAI code_interpreter)
 │       └── showrunner.py       # Orchestrator agents (all providers)
 └── renderer/
     ├── terminal.py             # Rich terminal output

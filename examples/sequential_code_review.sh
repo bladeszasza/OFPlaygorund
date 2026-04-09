@@ -30,6 +30,11 @@
 
 SNIPPET="${1:-}"
 
+CODEFIXER_PROMPT="You are CodeFixer, a senior software engineer.
+You will receive the original code snippet plus consolidated review findings (security, performance, style).
+Implement ALL suggested fixes in one shot using code_interpreter.
+Output the corrected file via code_interpreter. Do not explain — just produce the fixed code."
+
 SECURITY_PROMPT="You are SecurityReviewer, a senior application security engineer.
 Your sole focus is the code the human submits. Review it strictly for security issues:
 - OWASP Top 10 vulnerabilities (injection, XSS, broken auth, IDOR, etc.)
@@ -93,6 +98,7 @@ if [ -n "$SNIPPET" ]; then
     --agent "anthropic:SecurityReviewer:${SECURITY_PROMPT}" \
     --agent "anthropic:PerformanceReviewer:${PERFORMANCE_PROMPT}" \
     --agent "openai:StyleReviewer:${STYLE_PROMPT}" \
+    --agent "openai:code-generation:CodeFixer:${CODEFIXER_PROMPT}" \
     --show-floor-events \
     --topic "$SNIPPET"
 else
@@ -103,5 +109,6 @@ else
     --agent "anthropic:SecurityReviewer:${SECURITY_PROMPT}" \
     --agent "anthropic:PerformanceReviewer:${PERFORMANCE_PROMPT}" \
     --agent "openai:StyleReviewer:${STYLE_PROMPT}" \
+    --agent "openai:code-generation:CodeFixer:${CODEFIXER_PROMPT}" \
     --show-floor-events
 fi

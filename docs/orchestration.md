@@ -285,8 +285,8 @@ After chapter 10:
 | StoryWriter | Anthropic (Sonnet) | Writes one chapter per assignment |
 | NanoBananPainter | HuggingFace (text-to-image) | Illustrates each chapter |
 | Composer | Google Lyria (text-to-music) | Ambient loopable background music |
-| ChapterBuilder | HuggingFace (web-page-generation, DeepSeek) | HTML chapter pages |
-| IndexBuilder | Anthropic (web-page-generation, Haiku) | Master index.html |
+| ChapterBuilder | OpenAI (code-generation) | HTML chapter pages |
+| IndexBuilder | OpenAI (code-generation) | Master index.html |
 
 ### Breakout Sessions
 

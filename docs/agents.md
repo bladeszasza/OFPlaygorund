@@ -23,7 +23,7 @@ BasePlaygroundAgent
     ├── HuggingFaceAgent        — HF Inference API text generation
     ├── DirectorAgent           — Narrative director (ROUND_ROBIN)
     ├── ShowRunnerAgent         — Story synthesis (ROUND_ROBIN)
-    ├── WebPageAgent            — HTML page generator (any provider)
+    ├── CodingAgent             — code generation agent (OpenAI code_interpreter)
     ├── MultimodalAgent         — Vision-language models
     ├── OrchestratorAgent       — HF orchestrator (SHOWRUNNER_DRIVEN)
     ├── AnthropicOrchestratorAgent — Claude orchestrator
@@ -255,31 +255,21 @@ Uses Google Lyria RealTime streaming API:
 
 ---
 
-## Web Page Agent
+## Coding Agent
 
-### WebPageAgent
+### CodingAgent
 
-**File**: `src/ofp_playground/agents/llm/web_page.py`  
-**CLI types**: `web-page-generation`, `web-page`, `web-showcase` (backward compat)  
-**Providers**: Any (Anthropic, OpenAI, Google, HF)  
-**Output**: `result/<session>/web/`
+**File**: `src/ofp_playground/agents/llm/codex.py`
+**CLI type**: `code-generation`
+**Providers**: OpenAI (full), Anthropic / Google / HuggingFace (stub — `NotImplementedError`)
 
-Multi-provider HTML page generator:
+General-purpose coding agent. Receives `[DIRECTIVE for Name]:` task assignments from the ShowRunner/FloorManager, holds the floor through a full OpenAI Responses API + `code_interpreter` agentic loop, and saves generated files to `ofp-code/`.
 
-1. **Passive collection** — observes all utterances, collects image/audio/video file paths
-2. **Floor log** — records timestamped events for timeline generation
-3. **On floor grant** — builds full context (directive + base64 images + audio/video refs + log) → calls LLM → saves HTML
+Progress signals are sent as private utterances to the floor manager during the loop (liveness signal). Final result utterance and `yieldFloor` are bundled in one envelope (`reason: "@complete"`).
 
-Default models per provider:
-
-| Provider | Model |
-|----------|-------|
-| Anthropic | `claude-sonnet-4-6` |
-| OpenAI | `gpt-5.4-long-context` |
-| Google | `gemini-3.1-pro-preview` |
-| HuggingFace | `deepseek-ai/DeepSeek-V3.2` |
-
-**Backward compatibility**: `web_showcase.py` re-exports `WebPageAgent` as `WebShowcaseAgent`.
+**Output directory**: `ofp-code/`
+**Default model (OpenAI)**: `gpt-5.4-long-context`
+**Task type keyphrase**: `code-generation`
 
 ---
 

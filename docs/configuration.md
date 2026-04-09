@@ -90,10 +90,8 @@ timeout_seconds = 30
 |-------|---------------|
 | Music (Google Lyria) | `models/lyria-realtime-exp` |
 | Video (HF) | `Wan-AI/Wan2.2-TI2V-5B` |
-| WebPageAgent (Anthropic) | `claude-sonnet-4-6` |
-| WebPageAgent (OpenAI) | `gpt-5.4-long-context` |
-| WebPageAgent (Google) | `gemini-3.1-pro-preview` |
-| WebPageAgent (HF) | `deepseek-ai/DeepSeek-V3.2` |
+| CodingAgent (OpenAI) | `gpt-5.4-long-context` |
+| CodingAgent (Anthropic / Google / HF) | stub — not yet implemented |
 
 ### Overriding Models
 

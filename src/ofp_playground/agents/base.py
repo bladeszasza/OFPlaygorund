@@ -53,7 +53,7 @@ class BasePlaygroundAgent:
         self._pending_floor_request: bool = False  # prevent duplicate floor requests
         # Retry / timeout settings — overridden per-agent via CLI flags
         self._timeout: Optional[float] = None  # seconds per API call; None = no timeout
-        self._max_retries: int = 0             # extra attempts after first failure
+        self._max_retries: int = 3             # extra attempts after first failure
         self._retry_delay: float = 2.0         # base back-off seconds (doubles each attempt)
 
     @property
@@ -216,7 +216,7 @@ class BasePlaygroundAgent:
     async def _call_with_retry(self, coro_fn):
         """Call coro_fn() (a zero-arg callable returning a coroutine) with timeout + retry.
 
-        Uses self._timeout (seconds, None = unlimited) and self._max_retries (0 = single attempt).
+        Uses self._timeout (seconds, None = unlimited) and self._max_retries (default 3; 0 = single attempt).
         Retryable errors get exponential back-off: delay * 2**attempt, capped at 30 s.
         Non-retryable exceptions are re-raised immediately.
         When all attempts are exhausted the last exception is re-raised.
