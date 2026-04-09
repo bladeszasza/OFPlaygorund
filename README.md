@@ -114,7 +114,7 @@ Full table in [docs/agents.md](docs/agents.md).
 | Google | `google` / `gemini` | `gemini-3.1-flash-lite-preview` |
 | HuggingFace | `hf` / `huggingface` | `MiniMaxAI/MiniMax-M2.5` |
 
-Supported task types across providers: text generation, image generation, image-to-text (vision), text-to-music, text-to-video, code-generation, classification, NER, summarization, orchestrator.
+Supported task types across providers: text generation, image generation, image-to-text (vision), text-to-music, text-to-video, code-generation (OpenAI/Anthropic/Google), classification, NER, summarization, orchestrator.
 
 ---
 
@@ -231,11 +231,15 @@ src/ofp_playground/
 │       ├── openai.py           # OpenAI GPT (text + image)
 │       ├── google.py           # Google Gemini (text + image + music)
 │       ├── huggingface.py      # HuggingFace (text + image + video + perception)
-│       ├── codex.py            # CodingAgent — code generation (OpenAI code_interpreter)
+│       ├── codex.py            # BaseCodingAgent + OpenAICodingAgent (code_interpreter)
+│       ├── anthropic_coding.py # AnthropicCodingAgent (code_execution_20250825 beta)
+│       ├── google_coding.py    # GoogleCodingAgent (ToolCodeExecution)
+│       ├── model_catalog.py    # ModelCaps + MODEL_CATALOG for 9 models (drives manifests)
 │       └── showrunner.py       # Orchestrator agents (all providers)
 └── renderer/
     ├── terminal.py             # Rich terminal output
     └── gradio_ui.py            # Gradio web UI
+agents/                         # SOUL.md persona library (@slug syntax)
 examples/                       # Ready-to-run scripts
 docs/                           # Architecture and reference docs
 ```

@@ -23,7 +23,10 @@ BasePlaygroundAgent
     ├── HuggingFaceAgent        — HF Inference API text generation
     ├── DirectorAgent           — Narrative director (ROUND_ROBIN)
     ├── ShowRunnerAgent         — Story synthesis (ROUND_ROBIN)
-    ├── CodingAgent             — code generation agent (OpenAI code_interpreter)
+    ├── BaseCodingAgent(ABC)    — code generation base
+    │   ├── OpenAICodingAgent   — Responses API + code_interpreter
+    │   ├── AnthropicCodingAgent — code_execution_20250825 beta
+    │   └── GoogleCodingAgent   — ToolCodeExecution
     ├── MultimodalAgent         — Vision-language models
     ├── OrchestratorAgent       — HF orchestrator (SHOWRUNNER_DRIVEN)
     ├── AnthropicOrchestratorAgent — Claude orchestrator
@@ -255,21 +258,24 @@ Uses Google Lyria RealTime streaming API:
 
 ---
 
-## Coding Agent
+## Coding Agents
 
-### CodingAgent
+All coding agents share `BaseCodingAgent(BaseLLMAgent, abc.ABC)` in `codex.py`. Provider subclasses implement `_run_code_loop(context) → tuple[str, list[Path]]`.
 
-**File**: `src/ofp_playground/agents/llm/codex.py`
-**CLI type**: `code-generation`
-**Providers**: OpenAI (full), Anthropic / Google / HuggingFace (stub — `NotImplementedError`)
+**Shared behaviour**: Receives `[DIRECTIVE for Name]:` task assignments, sends progress as private utterances to the floor manager (liveness signal), bundles final result + `yieldFloor` in one envelope (`reason: "@complete"`). Task defaults: `_timeout=300s`, `_max_retries=2`. System prompt auto-loaded from `@development/coding-agent` SOUL.md when no synopsis is provided.
 
-General-purpose coding agent. Receives `[DIRECTIVE for Name]:` task assignments from the ShowRunner/FloorManager, holds the floor through a full OpenAI Responses API + `code_interpreter` agentic loop, and saves generated files to `ofp-code/`.
+**Output directory**: `result/<session>/code/`  
+**Task type keyphrase**: `code-generation`  
+**Backward-compat alias**: `CodingAgent = OpenAICodingAgent` in `codex.py`
 
-Progress signals are sent as private utterances to the floor manager during the loop (liveness signal). Final result utterance and `yieldFloor` are bundled in one envelope (`reason: "@complete"`).
+| CLI type | Class | File | Native tool | Default model |
+|----------|-------|------|-------------|---------------|
+| `openai:code-generation` | `OpenAICodingAgent` | `codex.py` | `code_interpreter` (Responses API) | `gpt-5.4-long-context` |
+| `anthropic:code-generation` | `AnthropicCodingAgent` | `anthropic_coding.py` | `code_execution_20250825` beta | `claude-opus-4-6` |
+| `google:code-generation` | `GoogleCodingAgent` | `google_coding.py` | `ToolCodeExecution` | `gemini-3-flash-preview` |
+| `hf:code-generation` | — | — | Not supported | — |
 
-**Output directory**: `ofp-code/`
-**Default model (OpenAI)**: `gpt-5.4-long-context`
-**Task type keyphrase**: `code-generation`
+Anthropic and Google subclasses run the SDK call synchronously in a thread executor (`asyncio.get_running_loop().run_in_executor`). File download from generated artefacts is v1 OpenAI only; Anthropic and Google capture stdout inline.
 
 ---
 
