@@ -110,37 +110,19 @@ The FloorManager parses these directives in `_handle_orchestrator_directives()` 
 
 ### Agent Library (@slug syntax)
 
-The `agents/` directory at the repo root contains categorized agent personas as `SOUL.md` files:
-
-```
-agents/<category>/<agent-name>/SOUL.md
-```
-
-A slug like `@creative/brand-designer` resolves to `agents/creative/brand-designer/SOUL.md`. Use it as the system prompt in agent specs:
+`agents/` at the repo root is a library of 200+ agent personas across 24 domains. Each is a `SOUL.md` file — a structured system prompt — addressable by `@category/agent-name` slug.
 
 ```bash
-# @slug in -system field (expands to SOUL.md contents)
--provider anthropic -name Alice -system @creative/brand-designer
+# Use a persona as the system prompt
+-provider anthropic -name Alice -system @development/code-reviewer
+anthropic:Alice:@creative/brand-designer     # colon format also works
 
-# Works in colon format too (description field)
-anthropic:Alice:@creative/brand-designer
+ofp-playground agents     # list all available slugs
 ```
 
-The library is loaded via [`src/ofp_playground/agents/library.py`](src/ofp_playground/agents/library.py) and cached for the process lifetime. `ofp-playground agents` lists all available slugs.
+Loaded via [`src/ofp_playground/agents/library.py`](src/ofp_playground/agents/library.py), cached per process. Full documentation, category breakdown, and how to add new personas: [`docs/agents-library.md`](docs/agents-library.md).
 
-**`agents/development/` personas** (used automatically by coding agents when no synopsis is provided):
-
-| Slug | Purpose |
-|------|---------|
-| `@development/coding-agent` | Senior dev identity; TDD rhythm, debugging discipline, verification contract |
-| `@development/tdd-expert` | Iron Law, Red-Green-Refactor cycle, rationalizations table |
-| `@development/technical-planner` | File-first mapping, bite-sized tasks, no-placeholders rule |
-| `@development/tech-lead` | Decompose→delegate→review→integrate, two-stage review, quality gates |
-| `@development/code-reviewer` | Plan alignment, architecture review, when-to-invoke methodology |
-| `@development/bug-hunter` | 4-phase debugging, root-cause-before-fix, 3-fix rule |
-| `@development/test-writer` | TDD core, red-green-refactor, test quality checklist |
-| `@development/qa-tester` | Verification before completion, evidence before assertions |
-| `@development/pr-merger` | Branch completion, git worktrees guide |
+**`@development/coding-agent`** is auto-loaded by `BaseCodingAgent` when no synopsis is provided. Other key coding personas: `@development/code-reviewer`, `@development/bug-hunter`, `@development/tdd-expert`, `@development/technical-planner`, `@development/tech-lead`, `@development/test-writer`, `@development/qa-tester`, `@development/pr-merger`.
 
 ### Breakout Sessions
 

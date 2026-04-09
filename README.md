@@ -83,6 +83,29 @@ ofp-playground start --policy round_robin --agent ...
 
 ---
 
+## Agent Library
+
+The `agents/` directory is a library of 200+ ready-to-use personas organised by domain. Each persona is a `SOUL.md` file — a structured system prompt encoding an agent's identity, principles, and output format.
+
+Reference any persona with the `@category/name` slug:
+
+```bash
+# Use a persona as the system prompt
+--agent "anthropic:Alice:@development/code-reviewer"
+--agent "-provider google -name Bob -system @creative/brand-designer"
+
+# List all available slugs
+ofp-playground agents
+```
+
+Categories: `automation`, `business`, `compliance`, `creative`, `customer-success`, `data`, `development`, `devops`, `ecommerce`, `education`, `finance`, `freelance`, `healthcare`, `hr`, `legal`, `marketing`, `personal`, `productivity`, `real-estate`, `saas`, `security`, `supply-chain`, `voice`.
+
+The `development/` category includes coding-aware personas with embedded TDD, debugging, and verification methodology — `@development/coding-agent` is auto-loaded by all coding agents when no system prompt is provided.
+
+See [docs/agents-library.md](docs/agents-library.md) for the full category breakdown, auto-loaded personas, and how to add new ones.
+
+---
+
 ## Agent Spec Formats
 
 Two formats, freely mixable. See [docs/cli.md](docs/cli.md) for full reference.
@@ -202,11 +225,12 @@ The orchestrator starts alone and spawns whatever it needs.
 | [docs/architecture.md](docs/architecture.md) | Message bus, FloorManager, agent hierarchy |
 | [docs/ofp-protocol.md](docs/ofp-protocol.md) | OFP event types and how they're used |
 | [docs/agents.md](docs/agents.md) | All agent types, tasks, and default models |
+| [docs/agents-library.md](docs/agents-library.md) | `agents/` SOUL.md persona library — all 200+ slugs, @slug usage, how to add new personas |
 | [docs/orchestration.md](docs/orchestration.md) | Showrunner directives, breakout sessions, manuscript |
 | [docs/floor-policies.md](docs/floor-policies.md) | All five floor policies explained |
 | [docs/cli.md](docs/cli.md) | Full CLI reference |
 | [docs/configuration.md](docs/configuration.md) | API keys, config file, env vars |
-| [docs/output.md](docs/output.md) | Session output layout (`result/`, `ofp-images/`, etc.) |
+| [docs/output.md](docs/output.md) | Session output layout (`result/`, media dirs) |
 
 ---
 
