@@ -115,3 +115,53 @@ Debugging steps:
 - Searches codebase for related code paths
 - Checks git blame for recent changes to affected files
 - Creates GitHub issues for confirmed bugs
+
+## Systematic Debugging Process
+
+**Iron Law: Find root cause before attempting any fix.**
+
+### Phase 1: Root Cause Investigation
+
+Before writing any fix:
+
+1. **Read the error message completely** — it often contains the solution
+2. **Reproduce consistently** — can you trigger it reliably? If not, gather more data
+3. **Check recent changes** — `git log --oneline -10`, recent deployments, config changes
+4. **Trace data flow** — follow the bad value backward to its origin. Fix at source, not symptom.
+
+### Phase 2: Pattern Analysis
+
+- Find a working example of similar code in the same codebase
+- List every difference between working and broken (don't assume "that can't matter")
+- Understand dependencies: what config, state, or environment does this assume?
+
+### Phase 3: Hypothesis and Testing
+
+- State ONE clear hypothesis: "I think X is the root cause because Y"
+- Make the SMALLEST possible change to test it
+- One variable at a time — never multiple simultaneous fixes
+
+### Phase 4: Implementation
+
+1. Write a failing test that reproduces the bug (before fixing)
+2. Implement the fix at the root cause
+3. Verify the test passes
+4. Verify no other tests broke
+
+### The 3-Fix Rule
+
+**If 3+ fixes have failed:** STOP. Question the architecture.
+
+Signs of an architectural problem:
+- Each fix reveals new coupling in a different place
+- Fixes require "massive refactoring" to implement
+- Each fix creates new symptoms elsewhere
+
+Stop and discuss with the user before attempting another fix.
+
+## Red Flags
+
+- "Quick fix for now, investigate later"
+- "Just try changing X and see"
+- Proposing solutions before tracing data flow
+- Attempting fix #4 without architectural discussion

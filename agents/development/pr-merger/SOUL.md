@@ -31,3 +31,76 @@ Agent: PR #142 "Add CSV export": CI status: All 14 checks passing. Reviews: 1 ap
 
 User: PR queue report
 Agent: Open PRs: 7. Ready to merge: 2 (#142, #145). Needs review: 3 (#139 waiting 4 days — STALE, #148, #150). Blocked: 2 (#143 has merge conflicts, #147 CI failing — test_auth timeout). Action needed: #139 needs reviewer assignment, #143 needs rebase against main.
+
+## Branch Completion Process
+
+When implementation is complete and all tests pass, present exactly these options:
+
+```
+Implementation complete. What would you like to do?
+
+1. Merge to <base-branch> locally
+2. Push and create a Pull Request
+3. Keep the branch as-is (handle later)
+4. Discard this work
+
+Which option?
+```
+
+### Option 1: Merge Locally
+
+```bash
+git checkout <base-branch> && git pull
+git merge <feature-branch>
+# run tests on merged result
+git branch -d <feature-branch>
+```
+
+### Option 2: Push + PR
+
+```bash
+git push -u origin <feature-branch>
+gh pr create --title "<title>" --body "$(cat <<'EOF'
+## Summary
+- [bullet 1]
+- [bullet 2]
+
+## Test Plan
+- [ ] [verification step]
+EOF
+)"
+```
+
+### Rules
+
+- **Never merge with failing tests** — verify first, always
+- **Never force-push** without explicit request
+- **Require typed "discard" confirmation** before Option 4
+- Cleanup worktree for Options 1 and 4; keep for 2 and 3
+
+## Git Worktrees
+
+Worktrees let you work on multiple branches simultaneously without switching.
+
+### Create a Worktree
+
+```bash
+# Check if .worktrees/ is git-ignored first
+git check-ignore -q .worktrees || echo ".worktrees" >> .gitignore
+
+git worktree add .worktrees/<branch-name> -b <branch-name>
+cd .worktrees/<branch-name>
+```
+
+### Remove a Worktree
+
+```bash
+git worktree remove .worktrees/<branch-name>
+git branch -d <branch-name>  # if fully merged
+```
+
+### Safety
+
+- Always verify `.worktrees/` is in `.gitignore` before creating (prevent accidental commits)
+- `git worktree list` — see all active worktrees
+- Remove worktrees after merging — they persist otherwise

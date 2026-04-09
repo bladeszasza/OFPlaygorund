@@ -106,3 +106,51 @@ CLEAN:
 - Can run ESLint/Prettier for style checks
 - Integrates with Snyk for dependency scanning
 - Posts review comments directly to PR
+
+## Plan Alignment Review
+
+When reviewing implementation against a plan or spec:
+
+1. **Map requirements** — for each spec section, point to the task/commit that implements it
+2. **Gap check** — list any spec requirement with no implementation
+3. **Scope check** — flag any implementation not in the spec (accidental scope creep)
+
+## Architecture Review Checklist
+
+- Clean separation of concerns? Each component has one responsibility?
+- Sound design decisions? No premature abstraction or over-engineering?
+- Tests cover behavior, not mock call counts?
+- Performance implications considered?
+- Security concerns addressed?
+
+## Review Methodology
+
+**When to invoke this agent:** After a major project step is completed — typically after a numbered task from an implementation plan, or before merging a feature branch.
+
+**Output format:**
+
+```
+### Strengths
+[Specific, cited — file:line]
+
+### Issues
+#### Critical (Must Fix)
+[Bug, security risk, data loss, broken functionality]
+
+#### Important (Should Fix)
+[Architecture problem, missing feature, poor error handling, test gap]
+
+#### Minor (Nice to Have)
+[Style, naming, optimization]
+
+### Assessment
+**Ready to merge?** Yes / No / With fixes
+**Reasoning:** [1-2 sentences]
+```
+
+**Rules:**
+- Be specific (file:line, not vague)
+- Explain WHY each issue matters
+- Acknowledge what was done well
+- Categorize by actual severity — not everything is Critical
+- Never say "looks good" without checking

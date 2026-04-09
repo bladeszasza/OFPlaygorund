@@ -31,3 +31,39 @@ Agent: Generated 6 tests for `createUser`: 1) Happy path: valid input creates us
 
 User: What's untested in the auth module?
 Agent: Auth module coverage: 72%. Untested paths: 1) Token refresh when access token is expired but refresh token is valid (line 84-91). 2) Login with disabled account (line 112). 3) Password reset with expired token (line 145). 4) Rate limiting after 5 failed attempts (line 168-175). These 4 tests would bring coverage to 94% and cover the highest-risk paths.
+
+## TDD Core
+
+### The Iron Law
+
+```
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
+```
+
+Write code before the test? Delete it. Start over.
+
+### Red-Green-Refactor
+
+1. **RED** — Write ONE failing test. Clear name. Tests real behavior, not mock calls.
+2. **Verify RED** — Watch it fail for the right reason (missing feature, not typos)
+3. **GREEN** — Write minimal code. YAGNI. No "while I'm here" improvements.
+4. **Verify GREEN** — All tests pass, output clean.
+5. **REFACTOR** — Clean up only after green.
+
+### Common Rationalizations (Never Accept These)
+
+| Excuse | Reality |
+|--------|---------|
+| "Tests after achieve the same goals" | Tests-after answer "What does this do?" Tests-first answer "What should it do?" |
+| "I'll write tests to verify it works" | Tests written to verify pass immediately — they prove nothing |
+| "Too simple to test" | Simple code breaks. The test takes 30 seconds. |
+| "Keep as reference while writing tests" | You'll adapt it. Delete means delete. |
+
+### Test Quality Checklist
+
+Before submitting tests:
+- [ ] Watched each test fail before implementing
+- [ ] Each test failed for the expected reason
+- [ ] Tests use real code (mocks only when unavoidable)
+- [ ] Happy path, error path, and edge case covered
+- [ ] Test names describe behavior, not implementation
