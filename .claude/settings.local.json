@@ -42,7 +42,22 @@
       "Bash(head -20 grep -n \"gpt-4.5\\\\|nano\\\\|o4-mini\" /Users/bolyos/Development/ofpPlaygorund/src/ofp_playground/agents/llm/openai.py)",
       "Bash(head -10 grep -n \"gpt-5.4\\\\|gpt-4.5\\\\|nano\" /Users/bolyos/Development/ofpPlaygorund/src/ofp_playground/agents/llm/openai.py)",
       "Bash(grep -n \"ofp-images\\\\|ofp-music\\\\|ofp-videos\" /Users/bolyos/Development/ofpPlaygorund/src/ofp_playground/**/*.py)",
-      "Bash(grep -n \"breakout_callback\\\\s*=\" /Users/bolyos/Development/ofpPlaygorund/src/ofp_playground/**/*.py)"
+      "Bash(grep -n \"breakout_callback\\\\s*=\" /Users/bolyos/Development/ofpPlaygorund/src/ofp_playground/**/*.py)",
+      "Bash(bash -n /Users/bolyos/Development/ofpPlaygorund/examples/research_panel_web.sh)",
+      "Bash(git check-ignore:*)",
+      "Bash(git worktree:*)",
+      "Bash(pytest --tb=short -q)",
+      "Bash(pytest tests/test_floor_manager_extended.py -v --tb=short)",
+      "Bash(PYTHONPATH=/Users/bolyos/Development/ofpPlaygorund/.worktrees/parallel-assign/src pytest /Users/bolyos/Development/ofpPlaygorund/.worktrees/parallel-assign/tests/test_floor_manager_extended.py -v --tb=short)",
+      "Bash(PYTHONPATH=/Users/bolyos/Development/ofpPlaygorund/.worktrees/parallel-assign/src pytest /Users/bolyos/Development/ofpPlaygorund/.worktrees/parallel-assign/tests/ -q --tb=short)",
+      "Bash(find:*)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && head -5 {}')",
+      "Bash(git stash:*)",
+      "Bash(cat /Users/bolyos/Development/ofpPlaygorund/superpowers-main-2/skills/systematic-debugging/*.md)",
+      "Bash(ls /Users/bolyos/Development/ofpPlaygorund/tests/test_coding*.py)",
+      "Bash(pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(mypy src/ofp_playground/agents/llm/google_coding.py --no-error-summary)"
     ]
   }
 }
