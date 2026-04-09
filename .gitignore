@@ -60,6 +60,7 @@ MANIFEST
 
 # Project output
 result/
+docs/superpowers/
 ofp-images/
 ofp-videos/
 ofp-music/
