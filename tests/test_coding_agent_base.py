@@ -48,13 +48,14 @@ def test_task_defaults_applied(tmp_path):
     assert agent._max_retries == 2
 
 
-def test_output_dir_created(tmp_path, monkeypatch):
+def test_output_dir_not_created_at_init(tmp_path, monkeypatch):
+    """Output dir is created lazily on first file write, not at construction time."""
     from ofp_playground.agents.llm import codex as codex_module
     target = tmp_path / "ofp-code-new"
     monkeypatch.setattr(codex_module, "OUTPUT_DIR", target)
     from ofp_playground.agents.llm.codex import OpenAICodingAgent
     OpenAICodingAgent(name="C", synopsis="s", bus=MessageBus(), conversation_id="c", api_key="k")
-    assert target.exists()
+    assert not target.exists()  # lazy: dir created only when files are written
 
 
 @pytest.mark.asyncio

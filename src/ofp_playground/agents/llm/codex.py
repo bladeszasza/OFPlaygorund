@@ -58,7 +58,6 @@ class BaseCodingAgent(BaseLLMAgent, abc.ABC):
         self._max_retries = 2
         self._task_directive: str = ""
         self._output_dir: Path = OUTPUT_DIR
-        self._output_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def task_type(self) -> str:
@@ -205,7 +204,7 @@ class OpenAICodingAgent(BaseCodingAgent):
                 "max_output_tokens": 32000,
             }
             if not tools_disabled:
-                request_kwargs["tools"] = [{"type": "code_interpreter", "container": CODE_INTERPRETER_CONTAINER}]
+                request_kwargs["tools"] = [{"type": "code_interpreter", "container": CODE_INTERPRETER_CONTAINER}]  # type: ignore[assignment]
             try:
                 async with client.responses.stream(**request_kwargs) as stream:  # type: ignore[call-overload]
                     async for event in stream:
@@ -244,6 +243,7 @@ class OpenAICodingAgent(BaseCodingAgent):
             output_text, file_ids = await _stream_once()
 
         saved_files: list[Path] = []
+        self._output_dir.mkdir(parents=True, exist_ok=True)
         dl_client = AsyncOpenAI(api_key=self._api_key)
         try:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")

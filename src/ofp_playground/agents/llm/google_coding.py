@@ -41,7 +41,7 @@ class GoogleCodingAgent(BaseCodingAgent):
 
     async def _run_code_loop(self, context: str) -> tuple[str, list[Path]]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await self._send_progress("Sending to Gemini code execution...")
 
         def _call() -> tuple[str, list[Path]]:
@@ -57,7 +57,7 @@ class GoogleCodingAgent(BaseCodingAgent):
             )
 
             response = client.models.generate_content(
-                model=self._model,
+                model=self._model or DEFAULT_MODEL_GOOGLE,
                 contents=context,
                 config=config,
             )

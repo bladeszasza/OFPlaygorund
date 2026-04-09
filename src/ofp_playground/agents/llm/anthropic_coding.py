@@ -41,7 +41,7 @@ class AnthropicCodingAgent(BaseCodingAgent):
 
     async def _run_code_loop(self, context: str) -> tuple[str, list[Path]]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await self._send_progress("Sending to Anthropic code_execution...")
 
         def _call() -> tuple[str, list[Path]]:
@@ -57,7 +57,7 @@ class AnthropicCodingAgent(BaseCodingAgent):
                 system=self._synopsis,
                 tools=tools,
                 messages=messages,
-                betas=["code-execution-2025-05-22"],
+                betas=["code-execution-2025-05-22"],  # type: ignore[call-overload]
             )
 
             output_parts: list[str] = []
