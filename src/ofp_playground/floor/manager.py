@@ -7,7 +7,6 @@ import uuid
 from typing import Optional
 
 from openfloor import (
-    BotAgent,
     Capability,
     Conversation,
     DialogEvent,
@@ -16,7 +15,6 @@ from openfloor import (
     Identification,
     InviteEvent,
     Manifest,
-    PublishManifestsEvent,
     RequestFloorEvent,
     RevokeFloorEvent,
     Sender,
@@ -34,6 +32,7 @@ from ofp_playground.floor.policy import FloorController, FloorPolicy
 from ofp_playground.memory.store import MemoryStore
 from ofp_playground.models.artifact import Utterance
 from ofp_playground.renderer.terminal import TerminalRenderer
+from ofp_playground.trace import EventCollector, render_trace_html
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +78,9 @@ class FloorManager:
         self._manifest = make_floor_manager_manifest()
         self._conversation_id = f"conv:{uuid.uuid4()}"
         self._output = SessionOutputManager(self._conversation_id)
+        self._trace_collector = EventCollector(self._conversation_id)
+        self._trace_collector.register_agent(self.speaker_uri, FLOOR_MANAGER_NAME)
+        self._bus.set_collector(self._trace_collector)
         self._policy = FloorController(policy)
         self._history = ConversationHistory()
         self._renderer = renderer
@@ -124,6 +126,10 @@ class FloorManager:
     @property
     def history(self) -> ConversationHistory:
         return self._history
+
+    @property
+    def trace_collector(self) -> EventCollector:
+        return self._trace_collector
 
     @property
     def active_agents(self) -> dict[str, str]:
@@ -186,6 +192,7 @@ class FloorManager:
     def register_agent(self, speaker_uri: str, name: str) -> None:
         """Register a local agent with the floor manager."""
         self._agents[speaker_uri] = name
+        self._trace_collector.register_agent(speaker_uri, name)
         self._policy.add_to_rotation(speaker_uri)
         if self._renderer:
             self._renderer.add_agent(speaker_uri, name)
@@ -934,7 +941,7 @@ class FloorManager:
 
         if self._renderer:
             self._renderer.show_system_event(
-                f"[Orchestrator] Breakout completed — summary injected"
+                "[Orchestrator] Breakout completed — summary injected"
             )
 
     def _parse_worker_memory(self, text: str, author: str) -> str:
@@ -982,6 +989,17 @@ class FloorManager:
             if filepath:
                 print(f"\n[saved to {filepath}]")
 
+    def _output_trace_timeline(self) -> None:
+        """Write a standalone HTML trace timeline for all captured OFP events."""
+        filepath = self._output.root / "trace.html"
+        try:
+            render_trace_html(self._trace_collector, filepath)
+            logger.info("Trace timeline saved to %s", filepath)
+            if self._renderer:
+                self._renderer.show_system_event(f"Trace timeline saved: {filepath}")
+        except Exception as e:
+            logger.warning("Could not save trace timeline: %s", e)
+
     def _has_llm_agent(self, agent_uris: set[str]) -> bool:
         """Return True if any of the given agent URIs belongs to a local LLM agent."""
         return any("llm-" in uri for uri in agent_uris)
@@ -1006,10 +1024,10 @@ class FloorManager:
         director_text = (
             f"[DIRECTOR — Round {self._round_count} complete]\n"
             f"What just happened:\n" + "\n".join(recap_parts) + "\n\n"
-            f"IMPORTANT FOR ALL AGENTS: Build on what was said above. "
-            f"Do NOT contradict or ignore other agents' contributions. "
-            f"Do NOT invent new characters or plot threads that conflict with what was just established. "
-            f"React to and extend the existing narrative."
+            "IMPORTANT FOR ALL AGENTS: Build on what was said above. "
+            "Do NOT contradict or ignore other agents' contributions. "
+            "Do NOT invent new characters or plot threads that conflict with what was just established. "
+            "React to and extend the existing narrative."
         )
 
         de = DialogEvent(
@@ -1168,6 +1186,7 @@ class FloorManager:
                     logger.error("Floor manager error: %s", e, exc_info=True)
         finally:
             self._running = False
+            self._output_trace_timeline()
 
     def stop(self) -> None:
         self._running = False

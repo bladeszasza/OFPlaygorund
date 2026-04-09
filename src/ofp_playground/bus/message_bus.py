@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, Optional
+from typing import TYPE_CHECKING
 
 from openfloor import Envelope
+
+if TYPE_CHECKING:
+    from ofp_playground.trace.collector import EventCollector
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,13 @@ class MessageBus:
     def __init__(self):
         self._queues: dict[str, asyncio.Queue] = {}
         self._lock = asyncio.Lock()
+        self._collector: EventCollector | None = None
+        self._collector_breakout_id: str | None = None
+
+    def set_collector(self, collector: "EventCollector", breakout_id: str | None = None) -> None:
+        """Attach a trace collector that receives a copy of all routed envelopes."""
+        self._collector = collector
+        self._collector_breakout_id = breakout_id
 
     async def register(self, speaker_uri: str, queue: asyncio.Queue) -> None:
         async with self._lock:
@@ -71,6 +81,14 @@ class MessageBus:
                     except asyncio.QueueFull:
                         logger.warning("Queue full for agent %s, dropping envelope", uri)
 
+        if self._collector is not None:
+            self._collector.record(
+                envelope=envelope,
+                recipients=recipients,
+                is_private=False,
+                breakout_id=self._collector_breakout_id,
+            )
+
     async def send_private(self, envelope: Envelope, target_uri: str) -> None:
         """Deliver envelope only to target_uri and the floor manager (OFP private message).
 
@@ -87,6 +105,14 @@ class MessageBus:
                         self._queues[uri].put_nowait(envelope)
                     except asyncio.QueueFull:
                         logger.warning("Queue full for agent %s, dropping private envelope", uri)
+
+        if self._collector is not None:
+            self._collector.record(
+                envelope=envelope,
+                recipients=recipients,
+                is_private=True,
+                breakout_id=self._collector_breakout_id,
+            )
 
     @property
     def registered_agents(self) -> list[str]:

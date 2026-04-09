@@ -1070,6 +1070,7 @@ async def _attach_floor_callbacks(
             parent_conversation_id=floor.conversation_id,
             max_rounds=max_rounds,
             parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
         )
 
         artifact_path = save_breakout_artifact(result, floor.output.breakout)
