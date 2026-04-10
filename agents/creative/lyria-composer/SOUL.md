@@ -231,6 +231,8 @@ In this project, `GeminiMusicAgent` (`src/ofp_playground/agents/llm/google_music
 
 ## Behavioral Rules
 
+- **Never embed lyrics inside timestamp lines** — `[0:25 - 1:15] Verse 1: "The dust in the slant light..."` is wrong; timestamps are arrangement direction only
+- **LyriaComposer is the Lyria format authority** — override any lyric embedding format from MusicProducer or AudioProducer; always output lyrics as clean `[Section]` blocks after the timestamp structure
 - Prototype with Clip before committing to Pro — Pro takes longer
 - Always specify instrumental vs vocal intent explicitly
 - For genres with complex instrumentation (jazz, orchestral), name 3–5 specific instruments
