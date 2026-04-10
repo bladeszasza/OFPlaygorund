@@ -139,6 +139,11 @@ class ImageAgent(BasePlaygroundAgent):
         text = self._extract_text_from_envelope(envelope)
         if not text:
             return
+
+        # Ignore orchestrator control directives broadcast to all agents.
+        if re.search(r"\[(?:REJECT|ASSIGN(?:_PARALLEL)?|ACCEPT|KICK|SPAWN|TASK_COMPLETE)\b", text, re.IGNORECASE):
+            return
+
         # Extract clean [IMAGE]: directive from ShowRunner messages
         image_match = re.search(r"\[IMAGE\]:\s*(.+)", text, re.IGNORECASE)
         if image_match:
@@ -170,7 +175,7 @@ class ImageAgent(BasePlaygroundAgent):
                 logger.info("[%s] Generating image: %s", self._name, prompt[:80])
                 path = await self._generate_image(prompt)
                 if path:
-                    text_desc = f"Generated image for: {prompt[:200]}"
+                    text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
                     mime = _sniff_mime(path)
                     await self.send_envelope(
                         self._make_media_utterance_envelope(

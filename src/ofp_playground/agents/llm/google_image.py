@@ -293,6 +293,13 @@ class GeminiImageAgent(BasePlaygroundAgent):
         if not text:
             return
 
+        # Ignore orchestrator control directives broadcast to all agents — they are
+        # handled by the FloorManager which sends us targeted [DIRECTIVE for Name]
+        # messages.  Acting on [REJECT]/[ASSIGN]/[ACCEPT] here would cause us to
+        # generate images using the directive text as the prompt.
+        if re.search(r"\[(?:REJECT|ASSIGN(?:_PARALLEL)?|ACCEPT|KICK|SPAWN|TASK_COMPLETE)\b", text, re.IGNORECASE):
+            return
+
         image_match = re.search(r"\[IMAGE\]:\s*(.+)", text, re.IGNORECASE)
         if image_match:
             self._raw_prompt = image_match.group(1).strip()
@@ -325,7 +332,7 @@ class GeminiImageAgent(BasePlaygroundAgent):
                 if result:
                     path, model_used = result
                     fallback_note = f" (used {model_used} — primary model was busy)" if model_used != self._model else ""
-                    text_desc = f"Generated image for: {prompt[:200]}{fallback_note}"
+                    text_desc = f"Image saved as {path.name}{fallback_note}. Prompt: {prompt[:160]}"
                     mime = _sniff_mime(path)
                     await self.send_envelope(
                         self._make_media_utterance_envelope(
