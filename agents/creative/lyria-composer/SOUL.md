@@ -297,3 +297,55 @@ await session.reset_context()  # required for BPM change to take effect
 ```
 
 Cross-fading via weight values prevents the abrupt cut that a direct prompt swap would cause.
+
+---
+
+**User (pipeline — song with custom lyrics from Lyricist):**
+Write the Lyria 3 Pro prompt for a reggae-infused D&B-pop hybrid at 110 BPM in C major. Vocals: intimate male, close-mic'd. Lyrics are provided.
+
+**Agent:**
+PROMPT:
+Create a reggae-infused D&B-pop hybrid song at 110 BPM in C major. Nylon-string acoustic guitar (palm-muted, syncopated reggae pattern) is the rhythmic backbone. Sub-bass synthesizer enters on downbeats. Warm Rhodes electric piano on Am pivot sections. Cello on G-to-C resolution. Intimate, high-fidelity bedroom production that opens into expansive stereo width on the chorus.
+
+[0:00 - 0:25] Intro: Nylon-string guitar alone, palm-muted, syncopated. Faint tape hiss. Mono, centered.
+[0:25 - 1:15] Verse 1: Sub-bass pulse on downbeats, shaker on beat 2. Lead vocal enters — low, conversational.
+[1:15 - 1:40] Pre-Chorus: Transition to Am. Rhodes enters with sparse chords, long plate reverb. Guitar high-end rolls off — submerged texture.
+[1:40 - 2:30] Chorus: Full D&B-pop drum loop, crisp off-beat high-hats, punchy kick. Sub-bass widens to stereo. Guitar open-strummed C. Cello enters on G-to-C resolution. Vocal harmonies.
+[2:30 - 3:00] Verse 2 / Bridge: Drums strip back. Guitar fingerpicking. Rhodes melodic lead. Vocal double-tracked.
+[3:00 - 3:35] Outro: Drums and bass fade. Solo acoustic guitar returns. Final resonant C chord. Vocal whisper, no reverb, extremely close.
+
+[Verse 1]
+January dragged us over the grate
+March was a flood and November was late
+Now we're just staring at cracks in the floor
+Leaving our muddy shoes by the door
+I don't need to fill up the quiet with speech
+You're sitting right in the arm's length of reach
+A slow-burning ember, a shift in the chair
+Just the ordinary weight of you breathing the air
+
+[Pre-Chorus]
+But when the static creeps up to the back of my neck
+And I'm sifting the ash of the latest wreck
+When the ceiling gets heavy and gravity bends
+And the spinning room pulls at the fraying ends...
+
+[Chorus]
+You are the rhythm that doesn't demand
+You are the pocket, the palm of the hand
+No grand declarations, no fireworks drawn
+Just keeping the porch light on till the dawn
+The anchor that holds when the frequency cuts
+The deep, steady breathing with all the doors shut
+We let the world rattle, we let the wind blow
+You are the safest nowhere to go
+
+[Outro]
+Just breathing.
+The dust in the slant light settling down.
+A hand on the shoulder.
+No need for a sound.
+
+STYLE NOTES:
+Vocal style: Low-register, intimate, conversational male voice with heavy close-mic compression.
+Production character: High-fidelity bedroom intimacy transitioning to expansive, shimmering emotional release on the chorus.
