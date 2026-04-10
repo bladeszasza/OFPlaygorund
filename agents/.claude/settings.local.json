@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat /Users/bolyos/Development/ofpPlaygorund/agents/moltbook/*/SOUL.md)",
+      "Bash(ofp-playground start:*)",
+      "Bash(chmod +x /Users/bolyos/Development/ofpPlaygorund/examples/example_manga_universe.sh)",
+      "Bash(bash -n /Users/bolyos/Development/ofpPlaygorund/examples/example_manga_universe.sh)"
+    ]
+  }
+}

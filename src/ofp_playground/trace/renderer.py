@@ -45,7 +45,7 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
       --grid: #2a3a4c;
     }}
     html, body {{ margin: 0; height: 100%; background: radial-gradient(circle at 20% 10%, #1b2a3a 0%, #0f1720 60%); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }}
-    .shell {{ display: grid; grid-template-columns: minmax(0, 1fr) 380px; height: 100%; }}
+    .shell {{ display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 100%; align-items: start; }}
     .main {{ display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 14px; }}
     .header {{ background: var(--panel); border: 1px solid #223244; border-radius: 10px; padding: 10px 12px; }}
     .header h1 {{ margin: 0 0 6px; font-size: 18px; font-weight: 650; }}
@@ -63,7 +63,7 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
     .route.private {{ stroke-dasharray: 6 4; }}
     .grid-line {{ stroke: var(--grid); stroke-width: 1; opacity: 0.35; }}
     .ts-label {{ fill: #8ea2b7; font-size: 10px; }}
-    .sidebar {{ border-left: 1px solid #223244; background: #111a24; padding: 14px; overflow: auto; }}
+    .sidebar {{ position: sticky; top: 0; height: 100vh; border-left: 1px solid #223244; background: #111a24; padding: 14px; overflow-y: auto; box-sizing: border-box; }}
     .detail-title {{ margin: 0 0 6px; font-size: 16px; font-weight: 650; }}
     .detail-meta {{ color: var(--muted); font-size: 12px; margin-bottom: 10px; }}
     pre {{ margin: 0; padding: 10px; background: #0b121a; border: 1px solid #223244; border-radius: 8px; overflow: auto; font-size: 12px; line-height: 1.45; color: #dce8f5; }}

@@ -361,6 +361,8 @@ class FloorManager:
                 for marker in (
                     "Starting coding task",
                     "Running code_interpreter",
+                    "Sending to Gemini code execution",
+                    "Sending to Anthropic code_execution",
                     "Output:",
                     "Saved ",
                     "Directive requested text-only mode",
@@ -568,8 +570,11 @@ class FloorManager:
             flags=re.DOTALL | re.IGNORECASE,
         )
 
-        for line in text.splitlines():
-            line = line.strip()
+        lines = text.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            i += 1
             if not line:
                 continue
 
@@ -594,10 +599,19 @@ class FloorManager:
                 continue
 
             # [ASSIGN AgentName]: task  — set assigned agent, clear stale queue, grant floor
-            m = re.match(r"\[ASSIGN\s+(.+?)\]\s*:\s*(.+)", line, re.IGNORECASE)
+            # The task may be multi-line (e.g. a Lyria prompt with timestamps and lyrics).
+            # Collect continuation lines until the next directive or end of text.
+            m = re.match(r"\[ASSIGN\s+(.+?)\]\s*:\s*(.*)", line, re.IGNORECASE)
             if m:
                 target_name = m.group(1).strip()
-                task = m.group(2).strip()
+                task_parts = [m.group(2)]
+                while i < len(lines):
+                    peek = lines[i].strip()
+                    if re.match(r"\[(?:ASSIGN|ASSIGN_PARALLEL|ACCEPT|REJECT|KICK|SPAWN|SKIP|STORE_MEMORY|TASK_COMPLETE|BREAKOUT)[\s\]]", peek, re.IGNORECASE):
+                        break
+                    task_parts.append(lines[i])
+                    i += 1
+                task = "\n".join(task_parts).strip()
                 if assigned_in_batch:
                     logger.debug(
                         "Orchestrator [ASSIGN]: skipping duplicate assignment to '%s' in same batch",
