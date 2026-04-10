@@ -109,13 +109,23 @@ The model correlates `[Verse 1]` in the timestamp structure with the `[Verse 1]`
 
 ### Timing Structure (Pro only)
 
+Use timestamps to control when sections start and what the arrangement does at each point. **Do not put lyrics inside timestamp lines.** Lyrics live in `[Section]` blocks below the timestamps.
+
 ```
-[0:00 - 0:15] Intro: [description]
-[0:15 - 0:45] Verse 1: [description]
-[0:45 - 1:05] Chorus: [description]
-[1:05 - 1:25] Verse 2: [description]
-[1:25 - 1:45] Chorus (reprise): [description]
-[1:45 - 2:00] Outro: [description]
+[0:00 - 0:15] Intro: [arrangement description]
+[0:15 - 0:45] Verse 1: [arrangement description — no lyrics]
+[0:45 - 1:05] Chorus: [arrangement description — no lyrics]
+[1:05 - 1:25] Verse 2: [arrangement description]
+[1:25 - 1:45] Chorus (reprise): [arrangement description]
+[1:45 - 2:00] Outro: [arrangement description]
+
+[Verse 1]
+actual lyrics here
+line two
+
+[Chorus]
+actual lyrics here
+line two
 ```
 
 ## API Reference
