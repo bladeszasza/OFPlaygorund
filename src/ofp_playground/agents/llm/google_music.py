@@ -27,6 +27,57 @@ OUTPUT_MUSIC_DIR = Path("ofp-music")
 DEFAULT_MUSIC_MODEL = "models/lyria-realtime-exp"
 GEMINI_MUSIC_URI_TEMPLATE = "tag:ofp-playground.local,2025:gmusic-{name}"
 
+# ---------------------------------------------------------------------------
+# Lyria prompt recovery from manuscript (defense-in-depth)
+# ---------------------------------------------------------------------------
+
+# Boundaries that terminate a PROMPT: block inside the manuscript.
+_PROMPT_BLOCK_END_RE = re.compile(
+    r"^(?:"
+    r"[A-Z][A-Z \-]{3,}:"
+    r"|\[(?:audio|image|video|auto-accepted)"
+    r"|--- (?:END|SESSION|BREAKOUT)"
+    r"|NEGATIVE PROMPT:"
+    r")",
+    re.MULTILINE,
+)
+
+
+def _recover_lyria_prompt_from_manuscript(raw_text: str) -> str | None:
+    """Extract the last timestamped PROMPT: block from the STORY SO FAR section.
+
+    When the Showrunner truncates its PROMPT paste (copying only the first
+    line), the full LyriaComposer output is still present inside the
+    manuscript injected as ``--- STORY SO FAR ---``.  This function finds
+    and returns that full block so ``_build_content_prompt`` can use it.
+
+    Returns ``None`` if no suitable music PROMPT block is found.
+    """
+    start = raw_text.find("--- STORY SO FAR")
+    if start < 0:
+        return None
+    end = raw_text.find("--- END OF STORY SO FAR", start)
+    manuscript = raw_text[start:end] if end > start else raw_text[start:]
+
+    best: str | None = None
+    for m in re.finditer(r"^PROMPT:\s*\n?", manuscript, re.MULTILINE):
+        boundary = _PROMPT_BLOCK_END_RE.search(manuscript, m.end())
+        body = manuscript[m.end():boundary.start() if boundary else len(manuscript)].strip()
+        if re.search(r"\[0:\d\d", body):
+            best = body
+
+    if not best:
+        return None
+
+    clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", best)
+    clean = re.sub(r"#{1,6}\s*", "", clean)
+    clean = re.sub(r"---+", "", clean)
+    clean = re.sub(
+        r"\[(?:DIRECTIVE|DIRECTOR|floor-manager|ASSIGN|ACCEPT|REJECT|KICK|BREAKOUT)[^\]]*\][^\n]*",
+        "", clean, flags=re.IGNORECASE,
+    )
+    return clean.strip() or None
+
 # Lyria RealTime output format: raw 16-bit PCM stereo 48 kHz
 RT_SAMPLE_RATE = 48000
 RT_CHANNELS = 2
@@ -138,6 +189,20 @@ class GeminiMusicAgent(BasePlaygroundAgent):
         # Strip OFP protocol markers only — NOT Lyria section tags like [Verse 1], [0:00-0:25], [Chorus]
         clean = re.sub(r"\[(?:DIRECTIVE|DIRECTOR|floor-manager|ASSIGN|ACCEPT|REJECT|KICK|BREAKOUT)[^\]]*\][^\n]*", "", clean, flags=re.IGNORECASE)
         clean = clean.strip()
+
+        # If the result has no Lyria timestamps ([0:xx]), the Showrunner likely truncated
+        # its PROMPT paste.  The full LyriaComposer output is always in the injected
+        # STORY SO FAR (manuscript), so scan the original raw text for the last PROMPT:
+        # block that contains timestamps and use that instead.
+        if not re.search(r"\[0:\d\d", clean):
+            recovered = _recover_lyria_prompt_from_manuscript(text)
+            if recovered:
+                logger.info(
+                    "[%s] Showrunner truncated PROMPT paste — recovered full Lyria prompt from manuscript",
+                    self._name,
+                )
+                clean = recovered
+
         if self._style and self._style not in clean:
             return f"{self._style}. {clean}"
         return clean

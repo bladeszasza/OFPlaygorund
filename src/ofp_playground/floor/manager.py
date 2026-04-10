@@ -104,6 +104,7 @@ class FloorManager:
         self._manuscript: list[str] = []  # accumulated accepted chunks (showrunner_driven)
         self._last_worker_text: str = ""  # most recent non-orchestrator utterance text
         self._last_worker_name: str = ""  # speaker name for the above
+        self._last_accepted_text: str = ""  # snapshot of just-[ACCEPT]ed text for truncation recovery
         self._manifests: dict[str, "Manifest"] = {}  # speakerUri → Manifest
         self._memory_store: MemoryStore = MemoryStore()  # ephemeral session memory
 
@@ -533,6 +534,47 @@ class FloorManager:
         else:
             await self._send(envelope)
 
+    @staticmethod
+    def _expand_truncated_assign(task: str, accepted_text: str) -> str:
+        """Replace a truncated [ASSIGN] task with the full [ACCEPT]ed content.
+
+        When the Showrunner copy-pastes an agent's output into an [ASSIGN]
+        directive it sometimes truncates after the first line.  This method
+        detects the truncation by prefix-matching the task against the
+        just-accepted text and substitutes the full content.
+
+        Returns the original *task* unchanged if no truncation is detected.
+        """
+        import re as _re
+
+        if not accepted_text or len(task) >= len(accepted_text):
+            return task
+
+        # Strip Showrunner wrappers: "Generate this music — PROMPT:" etc.
+        def _core(t: str) -> str:
+            return _re.sub(
+                r"^(?:Generate\s+this\s+\w+\s*[-\u2014]\s*)?(?:PROMPT:\s*\n?)",
+                "", t, flags=_re.IGNORECASE,
+            ).lstrip()
+
+        task_core = _core(task)
+        accepted_core = _core(accepted_text)
+        if not task_core or not accepted_core:
+            return task
+
+        # Prefix match: does the task look like a truncated start of the accepted text?
+        match_len = min(len(task_core), 50)
+        if task_core[:match_len] != accepted_core[:match_len]:
+            return task
+        if len(accepted_core) <= len(task_core) * 1.5:
+            return task  # not significantly longer — no truncation
+
+        logger.info(
+            "Auto-expanding truncated ASSIGN task (%d → %d chars)",
+            len(task_core), len(accepted_core),
+        )
+        return accepted_text
+
     async def _handle_orchestrator_directives(self, text: str) -> None:
         """Parse and execute structured directives emitted by the OrchestratorAgent.
 
@@ -615,6 +657,12 @@ class FloorManager:
                     task_parts.append(lines[i])
                     i += 1
                 task = "\n".join(task_parts).strip()
+                # Auto-expand truncated task from just-[ACCEPT]ed content.
+                # The Showrunner sometimes pastes only the first line of a
+                # multi-line agent output (e.g. a Lyria PROMPT with timestamps).
+                if self._last_accepted_text:
+                    task = self._expand_truncated_assign(task, self._last_accepted_text)
+                    self._last_accepted_text = ""
                 if assigned_in_batch:
                     logger.debug(
                         "Orchestrator [ASSIGN]: skipping duplicate assignment to '%s' in same batch",
@@ -726,6 +774,7 @@ class FloorManager:
             if re.match(r"\[ACCEPT\]", line, re.IGNORECASE):
                 self._orchestrator_idle_grants = 0
                 if self._last_worker_text:
+                    self._last_accepted_text = self._last_worker_text
                     self._manuscript.append(self._last_worker_text)
                     self._last_worker_text = ""
                 if self._renderer:
