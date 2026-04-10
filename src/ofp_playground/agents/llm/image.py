@@ -11,7 +11,11 @@ from typing import Optional
 from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.base import BasePlaygroundAgent
-from ofp_playground.agents.llm.google_image import _sniff_mime
+from ofp_playground.agents.llm.google_image import (
+    _image_prompt_looks_truncated,
+    _recover_image_prompt_from_manuscript,
+    _sniff_mime,
+)
 from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,7 @@ class ImageAgent(BasePlaygroundAgent):
         self._has_floor = False
         self._last_text: Optional[str] = None
         self._raw_prompt: Optional[str] = None  # pre-built prompt from ShowRunner [IMAGE]: directive
+        self._last_directive_text: Optional[str] = None  # full DIRECTIVE text incl. STORY SO FAR
         self._output_dir: Path = OUTPUT_DIR
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +130,7 @@ class ImageAgent(BasePlaygroundAgent):
             # Check for orchestrator [DIRECTIVE for Name]: instruction
             text = self._extract_text_from_envelope(envelope)
             if text:
+                self._last_directive_text = text  # preserve full text incl. STORY SO FAR
                 m = re.search(rf"\[DIRECTIVE for {re.escape(self._name)}\]:\s*(.+)", text, re.IGNORECASE)
                 if m:
                     self._raw_prompt = m.group(1).strip()
@@ -150,6 +156,16 @@ class ImageAgent(BasePlaygroundAgent):
         self._has_floor = True
         try:
             prompt = self._raw_prompt or (self._build_prompt(self._last_text) if self._last_text else None)
+            # Defense-in-depth: if the prompt looks like a truncated PROMPT: snippet,
+            # recover the full block from the STORY SO FAR injected by the FloorManager.
+            if prompt and self._last_directive_text and _image_prompt_looks_truncated(prompt):
+                recovered = _recover_image_prompt_from_manuscript(self._last_directive_text)
+                if recovered:
+                    logger.info(
+                        "[%s] Showrunner truncated PROMPT paste — recovered full image prompt from manuscript",
+                        self._name,
+                    )
+                    prompt = recovered
             if prompt:
                 logger.info("[%s] Generating image: %s", self._name, prompt[:80])
                 path = await self._generate_image(prompt)
@@ -167,6 +183,7 @@ class ImageAgent(BasePlaygroundAgent):
             self._has_floor = False
             self._last_text = None
             self._raw_prompt = None
+            self._last_directive_text = None
             await self.yield_floor()
 
     async def _dispatch(self, envelope: Envelope) -> None:
