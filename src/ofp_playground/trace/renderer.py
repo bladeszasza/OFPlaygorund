@@ -44,17 +44,25 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
       --accent: #58a6ff;
       --grid: #2a3a4c;
     }}
-    html, body {{ margin: 0; height: 100%; background: radial-gradient(circle at 20% 10%, #1b2a3a 0%, #0f1720 60%); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }}
-    .shell {{ display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 100%; align-items: start; }}
-    .main {{ display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 14px; }}
-    .header {{ background: var(--panel); border: 1px solid #223244; border-radius: 10px; padding: 10px 12px; }}
+    html, body {{ margin: 0; height: 100%; overflow: hidden; background: radial-gradient(circle at 20% 10%, #1b2a3a 0%, #0f1720 60%); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }}
+    .shell {{ display: grid; grid-template-columns: minmax(0, 1fr) 380px; height: 100vh; overflow: hidden; }}
+    .main {{ display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 14px; height: 100vh; overflow: hidden; box-sizing: border-box; }}
+    .header {{ background: var(--panel); border: 1px solid #223244; border-radius: 10px; padding: 10px 12px; flex-shrink: 0; }}
     .header h1 {{ margin: 0 0 6px; font-size: 18px; font-weight: 650; }}
     .meta {{ color: var(--muted); font-size: 12px; }}
-    .controls {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: var(--panel); border: 1px solid #223244; border-radius: 10px; padding: 10px 12px; }}
+    .controls {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: var(--panel); border: 1px solid #223244; border-radius: 10px; padding: 10px 12px; flex-shrink: 0; }}
     .legend {{ display: flex; flex-wrap: wrap; gap: 8px 12px; }}
     .legend-item {{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }}
     .swatch {{ width: 12px; height: 12px; border-radius: 3px; border: 1px solid #334455; }}
-    .canvas-wrap {{ overflow: auto; border: 1px solid #223244; border-radius: 10px; background: linear-gradient(180deg, #111a24, #0d141d); }}
+    .canvas-wrap {{ overflow: auto; border: 1px solid #223244; border-radius: 10px; background: linear-gradient(180deg, #111a24, #0d141d); min-height: 0; }}
+    @keyframes dotPulse {{
+      0%   {{ transform: scale(1);   opacity: 0.7; }}
+      100% {{ transform: scale(4.5); opacity: 0; }}
+    }}
+    .pulse-ring {{ fill: none; stroke-width: 1.5; animation: dotPulse 1.5s ease-out infinite; pointer-events: none; transform-box: fill-box; transform-origin: center; }}
+    .event-dot.selected {{ stroke: #ffffff; stroke-width: 2.5; filter: drop-shadow(0 0 5px rgba(255,255,255,0.6)); }}
+    .lane-line.selected {{ stroke: var(--accent); opacity: 0.8; stroke-width: 2; }}
+    .lane-floor.selected {{ stroke: var(--accent); opacity: 1; stroke-width: 5; }}
     .lane-label {{ fill: #c8d6e5; font-size: 12px; font-weight: 600; }}
     .lane-line {{ stroke: #2f4154; stroke-width: 1; }}
     .lane-floor {{ stroke: #6ea8d9; stroke-width: 4; opacity: 0.85; }}
@@ -152,6 +160,8 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
     tooltip.style.display = "none";
     document.body.appendChild(tooltip);
 
+    let selectedEventIndex = null;
+
     const svg = d3.select("#timeline");
     const baseMargins = {{ top: 64, right: 50, bottom: 30, left: 90 }};
     const laneGap = 210;
@@ -247,6 +257,7 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
 
         g.append("line")
           .attr("class", cls)
+          .attr("data-lane-uri", uri)
           .attr("x1", x)
           .attr("x2", x)
           .attr("y1", baseMargins.top - 24)
@@ -309,9 +320,51 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
           }})
           .on("click", () => selectEvent(d));
       }});
+
+      if (selectedEventIndex !== null) highlightSelected();
+    }}
+
+    function highlightSelected() {{
+      const data = filteredEvents();
+      const selectedEvt = data.find(e => e.index === selectedEventIndex);
+      if (!selectedEvt) return;
+
+      // Highlight the lane vertical line
+      svg.selectAll(".lane-line, .lane-floor")
+        .classed("selected", function() {{
+          return this.getAttribute("data-lane-uri") === selectedEvt.sender_uri;
+        }});
+
+      // Highlight the dot and add pulse ring
+      svg.selectAll("g.row")
+        .each(function(d) {{
+          if (d.index !== selectedEvt.index) return;
+          const row = d3.select(this);
+          const dot = row.select("circle.event-dot");
+          dot.classed("selected", true);
+          const cx = +dot.attr("cx");
+          const cy = +dot.attr("cy");
+          const color = dot.attr("fill");
+          row.append("circle")
+            .attr("class", "pulse-ring")
+            .attr("cx", cx)
+            .attr("cy", cy)
+            .attr("r", d.directive ? 6 : 5)
+            .attr("stroke", color);
+        }});
+    }}
+
+    function clearSelection() {{
+      svg.selectAll(".lane-line, .lane-floor").classed("selected", false);
+      svg.selectAll("circle.event-dot").classed("selected", false);
+      svg.selectAll(".pulse-ring").remove();
     }}
 
     function selectEvent(evt) {{
+      clearSelection();
+      selectedEventIndex = evt.index;
+      highlightSelected();
+
       const meta = [
         `type: ${{evt.event_type}}`,
         `sender: ${{evt.sender_name}}`,

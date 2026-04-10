@@ -17,6 +17,23 @@ from ofp_playground.bus.message_bus import MessageBus
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("ofp-images")
+
+
+def _sniff_mime(path: Path, fallback: str = "image/png") -> str:
+    """Detect image MIME type from file magic bytes. Falls back to *fallback*."""
+    try:
+        header = path.read_bytes()[:12]
+        if header[:4] == b"\x89PNG":
+            return "image/png"
+        if header[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if header[:4] in (b"GIF8", b"GIF9"):
+            return "image/gif"
+        if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+            return "image/webp"
+    except OSError:
+        pass
+    return fallback
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 # Fallback chain: Nano Banana 2 → Nano Banana Pro → Nano Banana
 IMAGE_MODELS = [
@@ -122,10 +139,15 @@ class GeminiImageAgent(BasePlaygroundAgent):
             text_parts: list[str] = []
             for part in (response.parts or []):
                 if part.inline_data is not None:
-                    image = part.as_image()
+                    inline_mime = (getattr(part.inline_data, "mime_type", None) or "image/png").lower()
+                    ext = "jpg" if "jpeg" in inline_mime else "png"
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    save_path = self._output_dir / f"{ts}_{self._name.lower()}.png"
-                    image.save(str(save_path))
+                    save_path = self._output_dir / f"{ts}_{self._name.lower()}.{ext}"
+                    raw_bytes = getattr(part.inline_data, "data", None)
+                    if raw_bytes:
+                        save_path.write_bytes(raw_bytes)
+                    else:
+                        part.as_image().save(str(save_path))
                     return save_path, ""
                 if getattr(part, "text", None):
                     text_parts.append(part.text)
@@ -223,9 +245,10 @@ class GeminiImageAgent(BasePlaygroundAgent):
                     path, model_used = result
                     fallback_note = f" (used {model_used} — primary model was busy)" if model_used != self._model else ""
                     text_desc = f"Generated image for: {prompt[:200]}{fallback_note}"
+                    mime = _sniff_mime(path)
                     await self.send_envelope(
                         self._make_media_utterance_envelope(
-                            text_desc, "image", "image/png", str(path.resolve())
+                            text_desc, "image", mime, str(path.resolve())
                         )
                     )
         except Exception as e:
@@ -372,6 +395,7 @@ class GeminiVisionAgent(BaseLLMAgent):
 
         try:
             image_bytes = Path(path).read_bytes()
+            mime_type = _sniff_mime(Path(path), fallback=mime_type)
         except Exception as e:
             logger.error("[%s] Could not read image %s: %s", self._name, path, e)
             return None

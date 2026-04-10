@@ -4,11 +4,10 @@
 #
 # Agents:
 #   - google:orchestrator           → Showrunner (coordinates all phases)
-#   - google:text-generation        → UXResearcher (@creative/ux-researcher — listener profile)
+#   - google:text-generation        → UXResearcher (@creative/ux-researcher — visual world + website direction)
 #   - google:text-generation        → SongConcepter (song theme, structure, instruments)
 #   - google:text-generation        → Lyricist (writes full song lyrics)
 #   - google:text-generation        → MusicProducer (@creative/music-producer — production brief)
-#   - google:text-generation        → AudioProducer (@creative/audio-producer — mix & technical notes)
 #   - google:text-generation        → LyriaComposer (@creative/lyria-composer — Lyria prompt engineer)
 #   - google:text-to-music          → MusicGen (renders the Lyria prompt verbatim)
 #   - google:text-generation        → CoverArtist (@creative/impressionist-painter)
@@ -23,13 +22,12 @@
 #   1. SongConcepter: song title, emotional story, themes, structure, instruments, BPM, key
 #   2. Lyricist: complete lyrics with [Verse 1] [Chorus] [Bridge] etc. section labels
 #   3. MusicProducer: production brief — arrangement approach, sound references, instrument character
-#   4. AudioProducer: technical mix notes — signal chain character, sonic texture, processing vision
-#   5. LyriaComposer: Lyria 3 Pro prompt enriched with all above context
-#   6. MusicGen: generates the audio
-#   7. UXResearcher: listener profile informed by the finished song — guides cover art + website aesthetic
-#   8. CoverArtist: Van Gogh impressionist prompt guided by UXResearcher's visual world
-#   9. ImageGen: renders the cover art
-#  10. WebDev: single-page HTML site — cover art hero, audio player, lyrics, song story
+#   4. LyriaComposer: Lyria 3 Pro prompt enriched with all above context
+#   5. MusicGen: generates the audio
+#   6. UXResearcher: visual world and website aesthetic direction (informed by the song)
+#   7. CoverArtist: Van Gogh impressionist prompt guided by UXResearcher's visual world
+#   8. ImageGen: renders the cover art
+#   9. WebDev: single-page HTML site — cover art hero, audio player, lyrics, song story
 #      Design aesthetic driven by UXResearcher's website feel notes
 #      Uses relative paths: ../images/<file> and ../music/<file> from result/code/
 #
@@ -46,16 +44,24 @@
 set -e
 
 TOPIC="${1:-Chord progression: C — F — C — F — Am — G — F — G (C major key). \
-C and F are the warm grounded backbone. Am brings emotional dip — melancholy and vulnerability. \
-G is the tension chord resolving back to C, giving gentle forward pull. \
-The loop is smooth and cyclical, like breathing. \
-Genre: melodic Rock ballad. Tempo: mid-tempo, unhurried, reflective. \
-Duration target: ~3.5 minutes. Likely acoustic guitar-driven with soft intimate production. \
-The C–F–Am–G pattern mirrors campfire songs, bedroom recordings, late-night conversations. \
-Lyrical theme: quiet loyal friendship — steady presence without drama. \
-C→F feels like gentle reassurance, a hand on the shoulder. \
-Am drop mirrors heavier emotional moments — loss, shadow, endurance. \
-G→C resolution feels like exhaling — coming back to safety, back to the friend beside you.}"
+C and F are the pulse — street-level, locked-in, the groove that walks itself. \
+Am is the shadow side: not sadness but knowing — the cost of living fully. \
+G is the coil before the release, muscle memory tensing before the next drop into C. \
+The loop breathes like a city block at 3am. Circular. Inevitable. Never quite resolved. \
+Genre: funky punk rock — worn-in, not performed. Like finding a rhythm in concrete. \
+Tempo: mid-tempo 106 BPM, the unhurried swagger of someone who has already been through it. \
+Duration target: ~3 minutes. \
+Bass is the backbone — fingerstyle funk bass drives the entire track, popping and sliding between root notes, \
+locking with the kick drum on every C and F, never overplaying but impossible to ignore. \
+The guitar rides on top of the bass, not the other way around. \
+Snare hits hard on 2 and 4 — sharp, dry, no ring. The snare is the spine of the whole thing. \
+Lyrical theme: skating and friendship — the specific language of people who grew up together on the same block. \
+Not metaphor. Actual tricks. Actual falls. Actual friends calling your name across a parking lot. \
+The bond between people who show up for each other without making a big deal out of it. \
+C→F is momentum — pushing off, finding your feet, trusting your body. \
+Am is the bail, the blood on the knee, the sitting on the curb moment — but your friend is already walking over. \
+G→C is getting back up because they are watching and you would do the same for them.}"
+
 
 echo "Starting Song Production Pipeline"
 echo "   Topic: $TOPIC"
@@ -96,7 +102,6 @@ Format each section with a label on its own line:
 Write lyrics that are emotionally resonant with vivid imagery, internal rhyme, and a clear emotional arc. The chorus must be immediately memorable. Never use clichés — find the specific, surprising image.
 
 --- PHASE 3: PRODUCTION BRIEF ---
-Step 3a — MusicProducer defines the arrangement:
 [ASSIGN MusicProducer]: Based on the song concept and lyrics from the previous agents, write a detailed production brief for this song. Output:
 - ARRANGEMENT: How the song builds and breathes from intro to outro (density, layers, dynamics arc)
 - INSTRUMENTATION SPEC: Each instrument's exact role, playing style, and position in the mix (e.g. "acoustic guitar: fingerpicked, panned 10% left, intimate dry room sound")
@@ -104,33 +109,20 @@ Step 3a — MusicProducer defines the arrangement:
 - PRODUCTION CHARACTER: The overall production philosophy (bedroom recording warmth? radio-ready polish? live-room rawness?)
 - TEMPO & FEEL: Exact BPM, feel (straight/swung), and how the rhythm section locks
 
-Step 3b — AudioProducer defines the technical mix vision:
-[ASSIGN AudioProducer]: Based on MusicProducer's production brief and the song concept, write the technical audio production notes. Output:
-- SIGNAL CHAIN CHARACTER: How each main instrument should be processed (EQ curve character, compression approach, any notable effects)
-- MIX VISION: Where each element sits in the stereo field and frequency spectrum
-- REVERB & SPACE: What kind of space this song lives in (dry and close? a specific room? plate reverb on the vocals?)
-- DYNAMIC RANGE: Target loudness feel (intimate whisper to full drop ratio), whether the song breathes or stays dense
-- SONIC TEXTURE NOTES: Any specific sonic details that must come through (vinyl crackle, breath before a phrase, string rosin, etc.)
-
 --- PHASE 4: LYRIA MUSIC PROMPT ---
 Step 4a — LyriaComposer writes the music generation prompt:
-[ASSIGN LyriaComposer]: Using the song concept, lyrics, MusicProducer's production brief, and AudioProducer's mix vision, craft a Lyria 3 Pro music generation prompt that precisely captures this song. Embed the complete lyrics using the section tags from the Lyricist. Follow your prompt format exactly:
+[ASSIGN LyriaComposer]: Using the song concept, lyrics, and MusicProducer's production brief, craft a Lyria 3 Pro music generation prompt that precisely captures this song. Embed the complete lyrics using the section tags from the Lyricist. Follow your prompt format exactly:
 
-PROMPT: (genre, BPM, key, 4-6 specific instruments with role description informed by MusicProducer's spec, timestamp structure covering ~3.5 minutes with section-by-section description, embedded lyrics per section, mood and texture descriptors informed by AudioProducer's notes)
+PROMPT: (genre, BPM, key, 4-6 specific instruments with role description informed by MusicProducer's spec, timestamp structure covering ~3.5 minutes with section-by-section arrangement description only — no lyrics inside timestamps, followed by clean [Section] lyric blocks)
 STYLE NOTES: (vocal style, production character, any specific sonic details)
 
 Step 4b — After LyriaComposer responds, immediately assign:
 [ASSIGN MusicGen]: Generate this music — PROMPT: <paste LyriaComposer's exact PROMPT section content here verbatim — do not add or change anything>
 
---- PHASE 5: LISTENER PROFILE ---
-Now that the song exists, profile the audience it will reach.
-[ASSIGN UXResearcher]: The song has been composed. Based on the complete song concept, lyrics, production brief, and audio notes in the manuscript, profile the ideal listener for this song. Output a LISTENER PROFILE with:
-- WHO: demographic and psychographic sketch (age range, life situation, when and where they'd hear this)
-- EMOTIONAL STATE: what they are feeling when they press play — the wound or longing this song speaks to
-- WHAT THEY NEED: what this song does for them emotionally — catharsis, validation, company, courage?
-- VISUAL WORLD: what imagery, palette, and aesthetic resonates with this listener (this will guide the cover art)
-- WEBSITE FEEL: what design language speaks to this listener (rough and handmade? clean and minimal? cinematic?)
-- SUCCESS METRIC: how you would know this song landed — one specific sentence describing their reaction
+--- PHASE 5: VISUAL AND WEBSITE DIRECTION ---
+[ASSIGN UXResearcher]: Based on the song concept, lyrics, and production brief, define the visual and web design direction. Output:
+- VISUAL WORLD: 3-5 concrete visual descriptors — palette, textures, reference images, the emotional atmosphere that should guide the cover art
+- WEBSITE FEEL: 3-4 specific design language notes for WebDev — typography character, color mood, layout energy (e.g. "rough handmade textures, amber and charcoal, wide tracking on headlines, no clean white space")
 
 --- PHASE 6: COVER ART ---
 Step 6a — CoverArtist writes the painting prompt:
@@ -178,7 +170,6 @@ ofp-playground start \
   --agent "google:text-generation:SongConcepter:You are a creative music director and song architect. You think about songs as emotional experiences with a beginning, middle, and end. You develop complete song concepts: title, emotional story arc, thematic imagery, section-by-section structure with purpose, instrument selection with rationale, tempo, key, and intended listener impact. Be specific and evocative — name instruments precisely, describe emotions concretely, think about how every sonic choice serves the story." \
   --agent "google:text-generation:Lyricist:You are a professional lyricist and poet. You write songs with emotional depth, vivid imagery, and memorable hooks. You understand song structure deeply and how to serve a song's emotional arc with words. You use internal rhyme, slant rhyme, and concrete specificity. You never use clichés — you find the unexpected, true image. Output lyrics with clear section labels on their own lines: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].:gemini-3.1-pro-preview" \
   --agent "hf:text-generation:MusicProducer:@creative/music-producer" \
-  --agent "google:text-generation:AudioProducer:@creative/audio-producer" \
   --agent "google:text-generation:LyriaComposer:@creative/lyria-composer" \
   --agent "google:text-to-music:MusicGen::lyria-3-pro-preview" \
   --agent "google:text-generation:CoverArtist:@creative/impressionist-painter" \

@@ -11,6 +11,7 @@ from typing import Optional
 from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.base import BasePlaygroundAgent
+from ofp_playground.agents.llm.google_image import _sniff_mime
 from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
@@ -154,9 +155,10 @@ class ImageAgent(BasePlaygroundAgent):
                 path = await self._generate_image(prompt)
                 if path:
                     text_desc = f"Generated image for: {prompt[:200]}"
+                    mime = _sniff_mime(path)
                     await self.send_envelope(
                         self._make_media_utterance_envelope(
-                            text_desc, "image", "image/png", str(path.resolve())
+                            text_desc, "image", mime, str(path.resolve())
                         )
                     )
         except Exception as e:

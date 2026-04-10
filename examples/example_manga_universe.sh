@@ -98,7 +98,7 @@ After CubistPainter responds, immediately assign:
 [ASSIGN ImageGen]: Generate this image — <paste CubistPainter's exact PROMPT content here verbatim>
 
 Step 4c:
-[ASSIGN ImpressionistPainter]: Write a Van Gogh impasto cover image generation prompt for this manga. Output a PROMPT: section (directional brushwork, Arles or Saint-Rémy period palette, swirling motion, saturated complementary colors, oil on canvas), a NEGATIVE PROMPT: section, and brief PAINTER'S NOTE.
+[ASSIGN ImpressionistPainter]: Write a Van Gogh impasto cover image generation prompt for this manga. Output a PROMPT: section (directional brushwork, Swirling motion, saturated complementary colors, oil on canvas), a NEGATIVE PROMPT: section, and brief PAINTER'S NOTE.
 
 After ImpressionistPainter responds, immediately assign:
 [ASSIGN ImageGen]: Generate this image — <paste ImpressionistPainter's exact PROMPT content here verbatim>

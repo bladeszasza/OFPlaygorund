@@ -341,11 +341,13 @@ class FloorManager:
             if text_feat and text_feat.tokens:
                 text = " ".join(t.value for t in text_feat.tokens if t.value)
 
+            media_mime: str | None = None
             for key in ("image", "video", "audio", "3d"):
                 feat = de.features.get(key)
                 if feat and feat.tokens and feat.tokens[0].value:
                     media_key = key
                     media_path = feat.tokens[0].value
+                    media_mime = getattr(feat, "mimeType", None) or None
                     break
 
         # Coding agents send private liveness whispers (e.g. "Running code_interpreter...").
@@ -376,7 +378,8 @@ class FloorManager:
 
         # Build typed Utterance and store in history
         if media_key == "image" and media_path:
-            utterance = Utterance.from_image(sender_uri, sender_name, text, media_path)
+            utterance = Utterance.from_image(sender_uri, sender_name, text, media_path,
+                                             mime_type=media_mime or "image/png")
         elif media_key == "video" and media_path:
             utterance = Utterance.from_video(sender_uri, sender_name, text, media_path)
         else:
