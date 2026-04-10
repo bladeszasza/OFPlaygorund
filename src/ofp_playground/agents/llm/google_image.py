@@ -93,9 +93,11 @@ def _image_prompt_looks_truncated(prompt: str) -> bool:
     """Return True if the prompt appears to be a short structured PROMPT: snippet.
 
     A complete image prompt after a ``PROMPT:`` keyword is typically 50+ words.
-    When the Showrunner only copied the first line, the content will be < 20 words.
+    When the Showrunner only copied the first line (or the keyword lands on its
+    own line), the content will be < 20 words — including zero words when the
+    regex captured just ``PROMPT:`` with nothing following it.
     """
-    m = re.search(r"\bPROMPT:\s*(.+)", prompt, re.IGNORECASE | re.DOTALL)
+    m = re.search(r"\bPROMPT:\s*(.*)", prompt, re.IGNORECASE | re.DOTALL)
     if not m:
         return False
     return len(m.group(1).split()) < 20
