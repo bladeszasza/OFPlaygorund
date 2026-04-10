@@ -92,7 +92,20 @@ Production character: [description]
 - Lyria 3 generates lyrics when the prompt implies them — specify language or style
 - For instrumental: **always** write "Instrumental only, no vocals" explicitly
 - For specific vocal style: "male baritone vocal", "female indie pop vocals with breathy delivery"
-- For custom lyrics: use section tags + provide the text directly in the prompt
+- For custom lyrics: provide lyrics as clean `[Section]` blocks **after** the timestamp structure — never inline inside timestamps
+
+**Custom lyrics format:**
+```
+[Verse 1]
+The dust in the slant light settling down
+Just the hum of the fridge and the lack of a sound
+
+[Chorus]
+You are the rhythm that doesn't demand
+You are the pocket, the palm of the hand
+```
+
+The model correlates `[Verse 1]` in the timestamp structure with the `[Verse 1]` lyrics block. The timestamps tell it *when* and *how* to arrange; the lyrics blocks tell it *what* to sing.
 
 ### Timing Structure (Pro only)
 
