@@ -78,6 +78,25 @@ def _recover_lyria_prompt_from_manuscript(raw_text: str) -> str | None:
     )
     return clean.strip() or None
 
+def _extract_image_path_from_directive(text: str) -> Optional[str]:
+    """Scan the STORY SO FAR block for the most recent [image by ...]: /path entry.
+
+    Used by the music agent when the pipeline generates a cover image first and
+    then passes it to Lyria Pro as a visual inspiration input.
+    """
+    start = text.find("--- STORY SO FAR")
+    if start < 0:
+        return None
+    end = text.find("--- END OF STORY SO FAR", start)
+    manuscript = text[start:end] if end > start else text[start:]
+    matches = re.findall(
+        r"\[image by [^\]]+\]:\s*(\S+\.(?:jpg|jpeg|png|webp))",
+        manuscript,
+        re.IGNORECASE,
+    )
+    return matches[-1] if matches else None
+
+
 # Lyria RealTime output format: raw 16-bit PCM stereo 48 kHz
 RT_SAMPLE_RATE = 48000
 RT_CHANNELS = 2
@@ -255,8 +274,13 @@ class GeminiMusicAgent(BasePlaygroundAgent):
     # Generation: generateContent API (Lyria 3 Clip / Pro)
     # ------------------------------------------------------------------
 
-    async def _do_generate_content(self, prompt: str) -> Optional[Path]:
-        """Generate music via client.models.generate_content() for Clip/Pro models."""
+    async def _do_generate_content(self, prompt: str, image_path: Optional[str] = None) -> Optional[Path]:
+        """Generate music via client.models.generate_content() for Clip/Pro models.
+
+        When *image_path* is provided the image is passed as a second Part in the
+        request — Lyria 3 Pro reads the mood, palette, and composition and blends
+        that visual context into the generated music alongside the text prompt.
+        """
         from google import genai
         from google.genai import types
 
@@ -266,6 +290,31 @@ class GeminiMusicAgent(BasePlaygroundAgent):
 
             config = types.GenerateContentConfig(response_modalities=["AUDIO", "TEXT"])
 
+            # Build contents: text-only, or text + cover image for visual inspiration
+            if image_path:
+                try:
+                    img_bytes = Path(image_path).read_bytes()
+                    ext = Path(image_path).suffix.lower()
+                    _mime_map = {
+                        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
+                    }
+                    img_mime = _mime_map.get(ext, "image/jpeg")
+                    image_part = types.Part.from_bytes(data=img_bytes, mime_type=img_mime)
+                    contents = [prompt, image_part]
+                    logger.info(
+                        "[%s] Including cover image in Lyria generation: %s (%s)",
+                        self._name, image_path, img_mime,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "[%s] Could not load image %s: %s — falling back to text-only",
+                        self._name, image_path, e,
+                    )
+                    contents = prompt
+            else:
+                contents = prompt
+
             logger.info("[%s] Calling generateContent with model=%s prompt=%s…", self._name, self._model, prompt[:80])
 
             loop = asyncio.get_event_loop()
@@ -273,7 +322,7 @@ class GeminiMusicAgent(BasePlaygroundAgent):
                 None,
                 lambda: client.models.generate_content(
                     model=self._model,
-                    contents=prompt,
+                    contents=contents,
                     config=config,
                 ),
             )
@@ -375,7 +424,13 @@ class GeminiMusicAgent(BasePlaygroundAgent):
     # Unified entry point
     # ------------------------------------------------------------------
 
-    async def _generate_music(self, prompt: str, duration_seconds: int, max_retries: int = 3) -> Optional[Path]:
+    async def _generate_music(
+        self,
+        prompt: str,
+        duration_seconds: int,
+        max_retries: int = 3,
+        image_path: Optional[str] = None,
+    ) -> Optional[Path]:
         # generateContent (Clip/Pro) can take longer for full-length songs
         timeout = 180.0 if not self._is_realtime_model() else 60.0
         last_error: Optional[Exception] = None
@@ -384,7 +439,7 @@ class GeminiMusicAgent(BasePlaygroundAgent):
                 if self._is_realtime_model():
                     coro = self._do_generate_realtime(prompt, duration_seconds)
                 else:
-                    coro = self._do_generate_content(prompt)
+                    coro = self._do_generate_content(prompt, image_path=image_path)
                 return await asyncio.wait_for(coro, timeout=timeout)
             except asyncio.TimeoutError:
                 logger.error("[%s] Lyria timed out after %ds (attempt %d/%d)", self._name, int(timeout), attempt, max_retries)
@@ -450,8 +505,20 @@ class GeminiMusicAgent(BasePlaygroundAgent):
             else:
                 return
 
+            # Extract cover image from STORY SO FAR for image-to-music generation.
+            # The music agent's directive already contains the full text (DOTALL regex),
+            # so _raw_prompt includes the injected manuscript from the FloorManager.
+            image_path: Optional[str] = None
+            if self._raw_prompt and not self._is_realtime_model():
+                image_path = _extract_image_path_from_directive(self._raw_prompt)
+                if image_path:
+                    logger.info(
+                        "[%s] Found cover image for Lyria visual inspiration: %s",
+                        self._name, image_path,
+                    )
+
             logger.info("[%s] Generating music via %s: %s", self._name, self._model, music_prompt[:80])
-            path = await self._generate_music(music_prompt, duration)
+            path = await self._generate_music(music_prompt, duration, image_path=image_path)
             if path:
                 mime = "audio/wav" if path.suffix in (".wav",) else "audio/mpeg"
                 # Use a clear completion message — NOT the prompt text.
