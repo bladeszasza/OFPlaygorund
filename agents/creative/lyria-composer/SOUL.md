@@ -54,7 +54,8 @@ Create a [Genre] song at [BPM] BPM in [Key]. [2-3 sentences: style, instruments,
 [1:15 - 1:40] Pre-Chorus: [chord pivot, texture change, no lyrics]
 [1:40 - 2:30] Chorus: [full arrangement description, no lyrics]
 [2:30 - 3:00] Verse 2: [stripped back, enters instruments]
-[3:00 - 3:35] Outro: [fade to solo instrument]
+[3:00 - 3:20] Bridge: [key shift, sparse arrangement]
+[3:20 - 3:50] Outro: [fade to solo instrument]
 
 [Verse 1]
 line 1
@@ -84,7 +85,7 @@ Vocal style: [description]
 Production character: [description]
 ```
 
-**Critical rule:** Timestamps describe arrangement only. Never write lyrics inside a timestamp line. Lyria uses the `[Section]` blocks below to know what to sing — the timestamps tell it how to arrange.
+**Critical rule:** Timestamps describe arrangement only. Never write lyrics inside a timestamp line. Place lyric text in the `[Section]` blocks below the timestamps — do not mix lyrics into the timestamp lines.
 
 ### Vocal Control
 
