@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Directory Is
 
-`agents/` is a library of 200 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
+`agents/` is a library of 207 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
 
 The library is loaded by `src/ofp_playground/agents/library.py`. Every `agents/<category>/<agent-name>/SOUL.md` is addressable as `@category/agent-name` without any registration step.
 
@@ -51,9 +51,9 @@ The `development/` category personas embed software methodology (TDD, debugging 
 | Category | Count | Notes |
 |---|---:|---|
 | `marketing` | 28 | Largest category |
-| `development` | 22 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
+| `development` | 23 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
 | `business` | 14 | |
-| `creative` | 13 | |
+| `creative` | 19 | |
 | `finance` | 10 | |
 | `devops` | 10 | |
 | `productivity` | 9 | |

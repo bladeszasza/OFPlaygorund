@@ -45,7 +45,7 @@ class DefaultsConfig:
     vision_model_google: str = "gemini-3-flash-preview"              # Gemini vision (image-to-text)
     music_model_google: str = "models/lyria-realtime-exp"            # Lyria RealTime music generation
     video_model_google: str = "veo-3.1-generate-preview"             # Veo video generation
-    llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.5"           # stronger default for HF debates
+    llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.7"           # stronger default for HF debates
     relevance_filter: bool = True
 
 

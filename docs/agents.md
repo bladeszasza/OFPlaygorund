@@ -127,7 +127,7 @@ Gradio-backed human agent. Uses two async queues:
 
 **File**: `src/ofp_playground/agents/llm/huggingface.py`  
 **Provider**: HuggingFace Inference API  
-**Default model**: `MiniMaxAI/MiniMax-M2.5`  
+**Default model**: `MiniMaxAI/MiniMax-M2.7`  
 **API**: `client.chat.completions.create()`
 
 ### BaseLLMAgent (shared logic)

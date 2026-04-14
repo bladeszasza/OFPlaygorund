@@ -74,8 +74,8 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
                    [-max-tokens N] [-timeout SECONDS] [-max-retries N]
 
     Examples:
-        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.5
-        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.5
+        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.7
+        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.7
         -provider hf -name FastTask -timeout 30 -max-retries 2
 
     Returns: (agent_type, name, description, model_override, max_tokens_override, timeout, max_retries)
