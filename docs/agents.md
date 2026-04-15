@@ -23,7 +23,10 @@ BasePlaygroundAgent
     ├── HuggingFaceAgent        — HF Inference API text generation
     ├── DirectorAgent           — Narrative director (ROUND_ROBIN)
     ├── ShowRunnerAgent         — Story synthesis (ROUND_ROBIN)
-    ├── WebPageAgent            — HTML page generator (any provider)
+    ├── BaseCodingAgent(ABC)    — code generation base
+    │   ├── OpenAICodingAgent   — Responses API + code_interpreter
+    │   ├── AnthropicCodingAgent — code_execution_20250825 beta
+    │   └── GoogleCodingAgent   — ToolCodeExecution
     ├── MultimodalAgent         — Vision-language models
     ├── OrchestratorAgent       — HF orchestrator (SHOWRUNNER_DRIVEN)
     ├── AnthropicOrchestratorAgent — Claude orchestrator
@@ -124,7 +127,7 @@ Gradio-backed human agent. Uses two async queues:
 
 **File**: `src/ofp_playground/agents/llm/huggingface.py`  
 **Provider**: HuggingFace Inference API  
-**Default model**: `MiniMaxAI/MiniMax-M2.5`  
+**Default model**: `MiniMaxAI/MiniMax-M2.7`  
 **API**: `client.chat.completions.create()`
 
 ### BaseLLMAgent (shared logic)
@@ -255,31 +258,24 @@ Uses Google Lyria RealTime streaming API:
 
 ---
 
-## Web Page Agent
+## Coding Agents
 
-### WebPageAgent
+All coding agents share `BaseCodingAgent(BaseLLMAgent, abc.ABC)` in `codex.py`. Provider subclasses implement `_run_code_loop(context) → tuple[str, list[Path]]`.
 
-**File**: `src/ofp_playground/agents/llm/web_page.py`  
-**CLI types**: `web-page-generation`, `web-page`, `web-showcase` (backward compat)  
-**Providers**: Any (Anthropic, OpenAI, Google, HF)  
-**Output**: `result/<session>/web/`
+**Shared behaviour**: Receives `[DIRECTIVE for Name]:` task assignments, sends progress as private utterances to the floor manager (liveness signal), bundles final result + `yieldFloor` in one envelope (`reason: "@complete"`). Task defaults: `_timeout=300s`, `_max_retries=2`. System prompt auto-loaded from `@development/coding-agent` SOUL.md when no synopsis is provided.
 
-Multi-provider HTML page generator:
+**Output directory**: `result/<session>/code/`  
+**Task type keyphrase**: `code-generation`  
+**Backward-compat alias**: `CodingAgent = OpenAICodingAgent` in `codex.py`
 
-1. **Passive collection** — observes all utterances, collects image/audio/video file paths
-2. **Floor log** — records timestamped events for timeline generation
-3. **On floor grant** — builds full context (directive + base64 images + audio/video refs + log) → calls LLM → saves HTML
+| CLI type | Class | File | Native tool | Default model |
+|----------|-------|------|-------------|---------------|
+| `openai:code-generation` | `OpenAICodingAgent` | `codex.py` | `code_interpreter` (Responses API) | `gpt-5.4-long-context` |
+| `anthropic:code-generation` | `AnthropicCodingAgent` | `anthropic_coding.py` | `code_execution_20250825` beta | `claude-opus-4-6` |
+| `google:code-generation` | `GoogleCodingAgent` | `google_coding.py` | `ToolCodeExecution` | `gemini-3-flash-preview` |
+| `hf:code-generation` | — | — | Not supported | — |
 
-Default models per provider:
-
-| Provider | Model |
-|----------|-------|
-| Anthropic | `claude-sonnet-4-6` |
-| OpenAI | `gpt-5.4-long-context` |
-| Google | `gemini-3.1-pro-preview` |
-| HuggingFace | `deepseek-ai/DeepSeek-V3.2` |
-
-**Backward compatibility**: `web_showcase.py` re-exports `WebPageAgent` as `WebShowcaseAgent`.
+Anthropic and Google subclasses run the SDK call synchronously in a thread executor (`asyncio.get_running_loop().run_in_executor`). File download from generated artefacts is v1 OpenAI only; Anthropic and Google capture stdout inline.
 
 ---
 

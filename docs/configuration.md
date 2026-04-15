@@ -46,7 +46,7 @@ huggingface = "hf_..."
 llm_model_anthropic = "claude-haiku-4-5-20251001"
 llm_model_openai = "gpt-5.4-nano"
 llm_model_google = "gemini-3.1-flash-lite-preview"
-llm_model_huggingface = "MiniMaxAI/MiniMax-M2.5"
+llm_model_huggingface = "MiniMaxAI/MiniMax-M2.7"
 relevance_filter = true
 
 [floor]
@@ -66,7 +66,7 @@ timeout_seconds = 30
 | Anthropic | `claude-haiku-4-5-20251001` |
 | OpenAI | `gpt-5.4-nano` |
 | Google | `gemini-3.1-flash-lite-preview` |
-| HuggingFace | `MiniMaxAI/MiniMax-M2.5` |
+| HuggingFace | `MiniMaxAI/MiniMax-M2.7` |
 
 ### Vision (Image-to-Text)
 
@@ -90,10 +90,8 @@ timeout_seconds = 30
 |-------|---------------|
 | Music (Google Lyria) | `models/lyria-realtime-exp` |
 | Video (HF) | `Wan-AI/Wan2.2-TI2V-5B` |
-| WebPageAgent (Anthropic) | `claude-sonnet-4-6` |
-| WebPageAgent (OpenAI) | `gpt-5.4-long-context` |
-| WebPageAgent (Google) | `gemini-3.1-pro-preview` |
-| WebPageAgent (HF) | `deepseek-ai/DeepSeek-V3.2` |
+| CodingAgent (OpenAI) | `gpt-5.4-long-context` |
+| CodingAgent (Anthropic / Google / HF) | stub — not yet implemented |
 
 ### Overriding Models
 
@@ -192,7 +190,7 @@ class DefaultsConfig:
     image_model_google: str = "gemini-3.1-flash-image-preview"
     vision_model_google: str = "gemini-3-flash-preview"
     music_model_google: str = "models/lyria-realtime-exp"
-    llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.5"
+    llm_model_huggingface: str = "MiniMaxAI/MiniMax-M2.7"
     relevance_filter: bool = True
 
 @dataclass

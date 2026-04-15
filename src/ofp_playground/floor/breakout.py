@@ -25,14 +25,16 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from ofp_playground.trace import EventCollector
 
 from openfloor import (
     Conversation,
     DialogEvent,
     Envelope,
     GrantFloorEvent,
-    RequestFloorEvent,
     Sender,
     TextFeature,
     Token,
@@ -208,12 +210,7 @@ class BreakoutFloorManager:
                 self._running = False
                 return
 
-            # Track round for sequential/round_robin
-            text_agents = {
-                uri for uri in self._agents
-                if "image" not in uri and "video" not in uri and "audio" not in uri
-            }
-            # After utterance, yield floor for next agent
+            # Hand off to the next speaker according to breakout policy.
             next_uri = self._policy.yield_floor(sender_uri)
             if next_uri:
                 await self._grant_floor(next_uri)
@@ -332,6 +329,7 @@ async def run_breakout_session(
     parent_conversation_id: str,
     max_rounds: int = 6,
     parent_renderer=None,
+    trace_collector: "EventCollector | None" = None,
 ) -> BreakoutResult:
     """Run a full breakout session and return a BreakoutResult.
 
@@ -370,6 +368,15 @@ async def run_breakout_session(
         parent_conversation_id=parent_conversation_id,
         max_rounds=max_rounds,
     )
+    if trace_collector is not None:
+        # Tag breakout events so they can render as nested branches in the main timeline.
+        breakout_bus.set_collector(
+            trace_collector,
+            breakout_id=breakout_fm.conversation_id,
+            scope_id=breakout_fm.conversation_id,
+            scope_kind="breakout",
+            parent_conversation_id=parent_conversation_id,
+        )
 
     if parent_renderer:
         agent_names = ", ".join(a.name for a in agents)

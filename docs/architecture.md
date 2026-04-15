@@ -27,7 +27,7 @@ FloorManager        LLM Agents           Remote Agents    Media Agents
  - Coordinates      - Anthropic          - HTTP proxy      - ImageAgent
  - Routes           - OpenAI             - Known slugs     - VideoAgent
  - Tracks floor     - Google               (arxiv, wiki)   - MusicAgent
- - Parses           - HuggingFace                          - WebPageAgent
+ - Parses           - HuggingFace                          - CodingAgent
    directives       - Orchestrators
  - Manages rounds   - Director
  - Memory store     - ShowRunner
@@ -83,7 +83,7 @@ result/
     ├── images/      ← generated images (HF FLUX, OpenAI, Gemini)
     ├── videos/      ← generated videos
     ├── music/       ← generated audio (Lyria)
-    ├── web/         ← HTML pages (WebPageAgent)
+    ├── code/        ← generated code files (CodingAgent)
     ├── breakout/    ← breakout session transcripts
     ├── manuscript.txt
     └── memory.json

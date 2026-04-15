@@ -53,7 +53,6 @@ class GoogleAgent(BaseLLMAgent):
     async def _generate_response(self, participants: list[str]) -> Optional[str]:
         import asyncio
         from google import genai
-        from google.genai import types
         loop = asyncio.get_event_loop()
         system = self._build_system_prompt(participants)
 

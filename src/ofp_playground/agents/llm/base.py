@@ -70,6 +70,7 @@ class BaseLLMAgent(BasePlaygroundAgent):
         self._name_registry: dict[str, str] = {}
         self._current_director_instruction: str = ""  # injected into system prompt at generation time
         self._memory_store = None  # set via set_memory_store() when in showrunner_driven mode
+        self._artifact_store = None  # set via set_artifact_store() for phase artifact access
 
     @property
     def task_type(self) -> str:
@@ -77,6 +78,26 @@ class BaseLLMAgent(BasePlaygroundAgent):
         return "text-generation"
 
     def _build_manifest(self) -> Manifest:
+        from ofp_playground.agents.llm.model_catalog import MODEL_CATALOG
+        caps = MODEL_CATALOG.get(self._model) if self._model else None
+
+        if caps:
+            keyphrases = list(caps.modalities_in) + list(caps.features) + list(caps.tools)
+            if self.task_type not in keyphrases:
+                keyphrases.insert(0, self.task_type)
+            description = (
+                f"{self._synopsis} | model: {self._model} | "
+                f"context: {caps.context_window:,} tokens"
+            )
+            supported_layers = SupportedLayers(
+                input=list(caps.modalities_in),
+                output=list(caps.modalities_out),
+            )
+        else:
+            keyphrases = [self.task_type]
+            description = self._synopsis
+            supported_layers = SupportedLayers(input=["text"], output=["text"])
+
         return Manifest(
             identification=Identification(
                 speakerUri=self._speaker_uri,
@@ -86,9 +107,9 @@ class BaseLLMAgent(BasePlaygroundAgent):
             ),
             capabilities=[
                 Capability(
-                    keyphrases=[self.task_type],
-                    descriptions=[self._synopsis],
-                    supportedLayers=SupportedLayers(input=["text"], output=["text"]),
+                    keyphrases=keyphrases,
+                    descriptions=[description],
+                    supportedLayers=supported_layers,
                 )
             ],
         )
@@ -100,6 +121,10 @@ class BaseLLMAgent(BasePlaygroundAgent):
     def set_memory_store(self, store) -> None:
         """Attach the shared session MemoryStore (set by FloorManager on agent registration)."""
         self._memory_store = store
+
+    def set_artifact_store(self, store) -> None:
+        """Attach the shared ArtifactStore for phase artifact access."""
+        self._artifact_store = store
 
     def _build_system_prompt(self, participants: list[str]) -> str:
         base = SYSTEM_PROMPT_TEMPLATE.format(
@@ -230,6 +255,12 @@ class BaseLLMAgent(BasePlaygroundAgent):
         if any(k in sender_uri for k in ("image", "video", "audio")):
             return
 
+        # Showrunner [ASSIGN X]: directives are broadcast by the orchestrator but handled
+        # privately by the floor manager ([DIRECTIVE for X] + grantFloor).
+        # Ignore the broadcast so agents don't pollute context or fire spurious requestFloor.
+        if re.search(r"\[ASSIGN\s+[^\]]+\]:", text, re.IGNORECASE):
+            return
+
         # Regular utterance: resolve sender name and add to context
         sender_name = self._name_registry.get(sender_uri) or _uri_to_name(sender_uri)
         self._append_to_context(sender_name, text, is_self=False)
@@ -291,7 +322,6 @@ class BaseLLMAgent(BasePlaygroundAgent):
             self._running = False
 
     async def _dispatch(self, envelope: Envelope) -> None:
-        sender_uri = self._get_sender_uri(envelope)
         for event in (envelope.events or []):
             event_type = getattr(event, "eventType", type(event).__name__)
             if event_type == "utterance":

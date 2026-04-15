@@ -10,6 +10,7 @@ from typing import Optional
 from openfloor import Capability, Envelope, Identification, Manifest, SupportedLayers
 
 from ofp_playground.agents.llm.base import BaseLLMAgent
+from ofp_playground.agents.llm.google_image import _sniff_mime
 from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,9 @@ class AnthropicVisionAgent(BaseLLMAgent):
         try:
             image_bytes = Path(path).read_bytes()
             b64 = base64.b64encode(image_bytes).decode()
+            # Sniff actual format — the envelope's mime_type can be wrong when the image
+            # generator defaults to "image/png" but Gemini returned JPEG bytes.
+            mime_type = _sniff_mime(Path(path), fallback=mime_type)
         except Exception as e:
             logger.error("[%s] Could not read image %s: %s", self._name, path, e)
             return None

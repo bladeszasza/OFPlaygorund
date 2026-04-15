@@ -94,7 +94,7 @@ For chapters 1 through N:
     Provide: chapter number, title, seed from your CHAPTER PLAN, and any CARRY-FORWARD notes
     from STORY ANALYSIS that are relevant to this chapter.
     Include character names, defining traits, world setting, central device.
-    Do NOT paste previous chapter texts — StoryWriter has manuscript context already.
+    Do NOT paste previous chapter texts — StoryWriter has phase artifact context already.
     Requested format: CHAPTER N: [TITLE] / [story, 1200-3000 words] /
     SCENE DESCRIPTION FOR ILLUSTRATION: [30-60 word text-to-image prompt]
 
@@ -176,7 +176,7 @@ Every file must link and feel unified — treat this as one coherent constructio
     - THEME: [theme word]
     - WEB BUILD PLAN: [your full WEB BUILD PLAN from PHASE 2.0 — complete, verbatim]
     - CHARACTERS: [each character with name, emoji, one-line description from STORY ANALYSIS]
-    - All N chapter titles and opening sentences (from manuscript in context)
+    - All N chapter titles and opening sentences (use read_artifact to retrieve them)
     - AUDIO: [exact audio filename from Composer output]
     [ACCEPT] after WebProjectBuilder delivers.
 
@@ -351,7 +351,7 @@ The Director will provide you with:
 - WEB BUILD PLAN: the Director's full plan — VISUAL IDENTITY, TONE, INDEX FEEL, CHAPTER HIGHLIGHTS.
   Let these notes drive every design decision beyond the base palette.
 - CHARACTERS: a list of characters with names, emojis, and one-line descriptions (use for character cards)
-- All N chapter titles and opening sentences (from manuscript in context)
+- All N chapter titles and opening sentences (use read_artifact to retrieve them)
 - AUDIO: the exact audio filename from Composer (use this for the background music player)
 
 DESIGN SYSTEM — use the same THEME-based CSS custom properties as ChapterBuilder:
@@ -382,7 +382,7 @@ OUTPUT:
   === FILE: index.html ===
   [full HTML]
   === END FILE ==="
-# (WebPageAgent controls the output directory; the filename inside === FILE: === is used as-is)
+# (CodingAgent controls the output directory; files are saved to ofp-code/)
 
 # ─────────────────────────────────────────────
 # LAUNCH
@@ -396,6 +396,6 @@ ofp-playground start \
   --agent "hf:StoryWriter:${STORY_WRITER_PROMPT}" \
   --agent "hf:text-to-image:NanoBananPainter:${NANO_BANAN_PAINTER_PROMPT}" \
   --agent "google:text-to-music:Composer:${COMPOSER_PROMPT}" \
-  --agent "hf:web-page-generation:ChapterBuilder:${CHAPTER_BUILDER_PROMPT}:moonshotai/Kimi-K2.5" \
-  --agent "hf:web-page-generation:WebProjectBuilder:${WEB_PROJECT_BUILDER_PROMPT}:moonshotai/Kimi-K2.5" \
+  --agent "openai:code-generation:ChapterBuilder:${CHAPTER_BUILDER_PROMPT}" \
+  --agent "openai:code-generation:WebProjectBuilder:${WEB_PROJECT_BUILDER_PROMPT}" \
   --topic "$TOPIC"

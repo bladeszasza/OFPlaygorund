@@ -121,7 +121,6 @@ def _envelope_to_chat_messages(
                 break
 
         role = "user" if is_human else "assistant"
-        title = f"{icon} {sender_name}"
         # Embed colour hint in title so CSS can target it
         title_with_color = f'<span style="color:{color};font-weight:700">{icon} {sender_name}</span>'
 
@@ -314,7 +313,111 @@ _CUSTOM_CSS = """
 #agent-status { font-size: 0.85rem; line-height: 1.7; padding: 8px 12px;
                 border-left: 3px solid #4A90D9; background: rgba(74,144,217,0.06);
                 border-radius: 4px; }
+
+/* Spawn feedback message */
+#spawn-msg { font-size: 0.82rem; min-height: 1.4em; }
 """
+
+
+# ── Spawn panel ───────────────────────────────────────────────────────────────
+
+def _build_spawn_panel(gr, loop, spawn_fn, gradio_renderer):
+    """Build the 'Spawn Agent' accordion inside the right column.
+
+    Loads the agent library (SOUL.md index) and wires:
+      - Category dropdown  →  filters agent picker
+      - Agent picker       →  auto-fills system prompt + name
+      - Spawn button       →  calls spawn_fn(spec) on the event loop
+    """
+    from ofp_playground.agents import library as _lib
+
+    agents_library = _lib.load()
+    categories = sorted({v["category"] for v in agents_library.values()})
+    _all_agent_choices = sorted(
+        [(v["display_name"], k) for k, v in agents_library.items()]
+    )
+
+    with gr.Accordion("Spawn Agent", open=False):
+        # ── Library picker ─────────────────────────────────────────────
+        if agents_library:
+            gr.Markdown(
+                f"*{len(agents_library)} agents across {len(categories)} categories*",
+                elem_id="spawn-lib-hint",
+            )
+            category_dd = gr.Dropdown(
+                choices=["(all)"] + categories,
+                value="(all)",
+                label="Category",
+            )
+            agent_dd = gr.Dropdown(
+                choices=_all_agent_choices,
+                value=None,
+                label="Pick from library",
+            )
+
+        # ── Config ─────────────────────────────────────────────────────
+        name_box = gr.Textbox(label="Name", placeholder="e.g. Copywriter")
+        provider_dd = gr.Dropdown(
+            choices=["hf", "anthropic", "openai", "google"],
+            value="hf",
+            label="Provider",
+        )
+        model_box = gr.Textbox(
+            label="Model (optional)",
+            placeholder="e.g. mistralai/Mistral-7B-Instruct-v0.3",
+        )
+        system_box = gr.Textbox(
+            label="System prompt",
+            lines=7,
+            placeholder="Describe the agent, or pick one from the library above…",
+        )
+        spawn_btn = gr.Button("Spawn", variant="primary")
+        spawn_msg = gr.Markdown("", elem_id="spawn-msg")
+
+        # ── Event handlers ─────────────────────────────────────────────
+        if agents_library:
+            def _filter_by_category(category):
+                if category == "(all)":
+                    choices = _all_agent_choices
+                else:
+                    choices = sorted(
+                        [(v["display_name"], k) for k, v in agents_library.items()
+                         if v["category"] == category]
+                    )
+                return gr.Dropdown(choices=choices, value=None)
+
+            def _load_agent(slug):
+                if not slug or slug not in agents_library:
+                    return "", ""
+                entry = agents_library[slug]
+                # CamelCase name from first two words of display_name
+                suggested = "".join(
+                    w.capitalize() for w in entry["display_name"].split()[:2]
+                )
+                return entry["content"], suggested
+
+            category_dd.change(_filter_by_category, [category_dd], [agent_dd])
+            agent_dd.change(_load_agent, [agent_dd], [system_box, name_box])
+
+        def _do_spawn(provider, name, system, model):
+            name = name.strip()
+            system = system.strip()
+            if not name:
+                return "**Name is required.**"
+            if not system:
+                return "**System prompt is required.**"
+            parts = [f"-provider {provider}", f"-name {name}", f"-system {system}"]
+            if model.strip():
+                parts.append(f"-model {model.strip()}")
+            spec = " ".join(parts)
+            asyncio.run_coroutine_threadsafe(spawn_fn(spec), loop)
+            return f"Spawning **{name}** ({provider})…"
+
+        spawn_btn.click(
+            _do_spawn,
+            [provider_dd, name_box, system_box, model_box],
+            [spawn_msg],
+        )
 
 
 # ── Main entry-point ──────────────────────────────────────────────────────────
@@ -330,6 +433,7 @@ def launch_web_session(
     port: int = 7860,
     share: bool = False,
     gradio_renderer: Optional[GradioRenderer] = None,
+    spawn_fn=None,  # Optional async coroutine: (spec: str) -> None
 ) -> None:
     """Launch the Gradio web UI.  Must be called from the main thread after the
     asyncio event loop is already running in a background thread.
@@ -440,13 +544,18 @@ def launch_web_session(
                 else:
                     gr.Markdown("*Watch-only mode — agents are talking autonomously.*")
 
-            # ── Right: agent status panel ──────────────────────────────────
-            with gr.Column(scale=1, min_width=200):
+            # ── Right: agent status + spawn panel ─────────────────────────
+            with gr.Column(scale=1, min_width=240):
                 gr.Markdown("### Active Agents")
                 status_md = gr.Markdown(
                     _build_status_md(),
                     elem_id="agent-status",
                 )
+
+                if spawn_fn:
+                    _spawn_ui_components = _build_spawn_panel(
+                        gr, loop, spawn_fn, gradio_renderer
+                    )
 
         # Wire submit handlers now that all components exist
         if human_agent:

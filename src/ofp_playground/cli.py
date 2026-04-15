@@ -9,6 +9,17 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+import click
+from rich.console import Console
+
+from ofp_playground.agents.human import HumanAgent
+from ofp_playground.agents.registry import AgentRegistry
+from ofp_playground.bus.message_bus import MessageBus
+from ofp_playground.config.settings import Settings
+from ofp_playground.floor.manager import FloorManager
+from ofp_playground.floor.policy import FloorPolicy
+from ofp_playground.renderer.terminal import TerminalRenderer
+
 logger = logging.getLogger(__name__)
 
 # Noisy third-party loggers to silence even in verbose mode
@@ -26,18 +37,6 @@ def _configure_logging(verbose: bool) -> None:
         logging.getLogger("ofp_playground").setLevel(logging.DEBUG)
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-
-
-import click
-from rich.console import Console
-
-from ofp_playground.bus.message_bus import MessageBus
-from ofp_playground.config.settings import Settings
-from ofp_playground.floor.manager import FloorManager
-from ofp_playground.floor.policy import FloorPolicy
-from ofp_playground.renderer.terminal import TerminalRenderer
-from ofp_playground.agents.human import HumanAgent
-from ofp_playground.agents.registry import AgentRegistry
 
 console = Console()
 
@@ -75,8 +74,8 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
                    [-max-tokens N] [-timeout SECONDS] [-max-retries N]
 
     Examples:
-        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.5
-        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.5
+        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.7
+        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.7
         -provider hf -name FastTask -timeout 30 -max-retries 2
 
     Returns: (agent_type, name, description, model_override, max_tokens_override, timeout, max_retries)
@@ -87,7 +86,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
 
     if spec.startswith("-"):
         # Flag-based format: find each -flag and collect its value up to the next -flag
-        flag_re = re.compile(r"-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
+        flag_re = re.compile(r"(?<!\w)-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
         matches = list(flag_re.finditer(spec))
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
@@ -117,6 +116,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
             raise click.BadParameter(f"Missing -provider in agent spec: {spec}")
         if not name:
             raise click.BadParameter(f"Missing -name in agent spec: {spec}")
+        description = _resolve_agent_slug(description)
         return agent_type, name, description, model_override, max_tokens_override, timeout_override, max_retries_override
 
     # Colon-separated format.
@@ -128,7 +128,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         "image-text-to-text", "image-classification", "object-detection",
         "image-segmentation", "token-classification", "text-classification",
         "summarization", "showrunner", "orchestrator",
-        "web-page", "web-page-generation", "web-showcase",
+        "code-generation",
     }
     def _looks_like_model_id(s: str) -> bool:
         """Return True only if s looks like a model identifier (no whitespace, ≤256 chars)."""
@@ -178,7 +178,25 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         else:
             description = f"I am {name}, an AI assistant."
             model_override = None
+    description = _resolve_agent_slug(description)
     return agent_type, name, description, model_override, None, None, 0
+
+
+def _resolve_agent_slug(description: str) -> str:
+    """If description starts with '@', resolve it to the matching SOUL.md content.
+
+    Examples::
+
+        @creative/brand-designer   → reads agents/creative/brand-designer/SOUL.md
+        @marketing/copywriter      → reads agents/marketing/copywriter/SOUL.md
+    """
+    if not description or not description.startswith("@"):
+        return description
+    try:
+        from ofp_playground.agents.library import resolve_slug
+        return resolve_slug(description)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
 def _resolve_remote(slug_or_url: str) -> tuple[str, str]:
@@ -407,7 +425,7 @@ async def _run_session(
 def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str, settings: Settings):
     """Create a text-only LLM agent for a breakout session from a spec string.
 
-    Spec format: -provider <p> -name <n> -system <s> [-model <m>]
+    Spec format: -provider <p> -name <n> -system <s> [-model <m>] [-timeout <s>] [-max-retries <n>]
 
     Only text-generation agents are created — no image/video/orchestrator.
     The agent is NOT registered on any floor; the caller wires it.
@@ -416,15 +434,19 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     provider_m = re.search(r"-provider\s+(\S+)", spec_str)
     name_m = re.search(r"-name\s+(\S+)", spec_str)
-    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens)\s|\s*$)", spec_str)
+    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens|timeout|max-retries)\s|\s*$)", spec_str)
     model_m = re.search(r"-model\s+(\S+)", spec_str)
     max_tokens_m = re.search(r"-max-tokens\s+(\d+)", spec_str)
+    timeout_m = re.search(r"-timeout\s+(\S+)", spec_str)
+    max_retries_m = re.search(r"-max-retries\s+(\d+)", spec_str)
 
     provider = provider_m.group(1) if provider_m else "hf"
     name = name_m.group(1) if name_m else "BreakoutAgent"
     system = system_m.group(1).strip() if system_m else f"You are {name}, an AI assistant."
     model_ov = model_m.group(1) if model_m else None
     max_tokens_ov = int(max_tokens_m.group(1)) if max_tokens_m else None
+    timeout_ov = float(timeout_m.group(1)) if timeout_m else None
+    max_retries_ov = int(max_retries_m.group(1)) if max_retries_m else None
 
     agent = None
     if provider in ("anthropic", "claude"):
@@ -472,6 +494,10 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     if agent is not None and max_tokens_ov and hasattr(agent, "_max_tokens"):
         agent._max_tokens = max_tokens_ov
+    if agent is not None and timeout_ov is not None and hasattr(agent, "_timeout"):
+        agent._timeout = timeout_ov
+    if agent is not None and max_retries_ov is not None and hasattr(agent, "_max_retries"):
+        agent._max_retries = max_retries_ov
     return agent
 
 
@@ -534,17 +560,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.anthropic_coding import AnthropicCodingAgent
+            agent = AnthropicCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="anthropic",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown Anthropic task: {task}. Use anthropic for text-generation, image-to-text, orchestrator, or web-page-generation."
+                f"Unknown Anthropic task: {task}. Use anthropic for text-generation, image-to-text, orchestrator, or code-generation."
             )
             return
 
@@ -609,17 +635,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.codex import OpenAICodingAgent
+            agent = OpenAICodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="openai",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, text-to-video, image-to-text, orchestrator, or web-page-generation."
+                f"Unknown OpenAI task: {task}. Use OpenAI for text-generation, text-to-image, text-to-video, image-to-text, orchestrator, or code-generation."
             )
             return
 
@@ -694,17 +720,17 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
+        elif task == "code-generation":
+            from ofp_playground.agents.llm.google_coding import GoogleCodingAgent
+            agent = GoogleCodingAgent(
                 name=name, synopsis=description, bus=bus,
                 conversation_id=floor.conversation_id,
-                api_key=api_key, provider="google",
+                api_key=api_key,
                 model=model_override or None,
             )
         else:
             renderer.show_system_event(
-                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, text-to-music, text-to-video, orchestrator, or web-page-generation."
+                f"Unknown Google task: {task}. Use google for text-generation, text-to-image, image-to-text, text-to-music, text-to-video, orchestrator, or code-generation."
             )
             return
 
@@ -860,14 +886,12 @@ async def _spawn_llm_agent(
                 settings=settings,
             )
             floor.register_orchestrator(agent.speaker_uri)
-        elif task in ("web-page", "web-page-generation", "web-showcase"):
-            from ofp_playground.agents.llm.web_page import WebPageAgent
-            agent = WebPageAgent(
-                name=name, synopsis=description, bus=bus,
-                conversation_id=floor.conversation_id,
-                api_key=api_key, provider="hf",
-                model=model_override or None,
+        elif task == "code-generation":
+            renderer.show_system_event(
+                "HuggingFace code-generation is not supported. "
+                "Use anthropic:code-generation, openai:code-generation, or google:code-generation."
             )
+            return
         else:
             # Default: text-generation (and any other text-in/text-out tasks)
             from ofp_playground.agents.llm.huggingface import HuggingFaceAgent
@@ -927,8 +951,8 @@ async def _spawn_llm_agent(
                 agent._output_dir = out.videos
             elif task in ("text-to-music",):
                 agent._output_dir = out.music
-            elif task in ("web-page", "web-page-generation", "web-showcase"):
-                agent._output_dir = out.web
+            elif task == "code-generation":
+                agent._output_dir = out.sandbox
             else:
                 agent._output_dir = out.root
             agent._output_dir.mkdir(parents=True, exist_ok=True)
@@ -941,6 +965,9 @@ async def _spawn_llm_agent(
         # Give all agents access to the shared session memory store
         if hasattr(agent, "set_memory_store"):
             agent.set_memory_store(floor._memory_store)
+        # Give all agents access to the shared phase artifact store
+        if hasattr(agent, "set_artifact_store"):
+            agent.set_artifact_store(floor._artifact_store)
         floor.register_agent(agent.speaker_uri, agent.name)
         registry.register(agent)
         model_name = model_override or getattr(agent, "_model", "default")
@@ -1054,6 +1081,7 @@ async def _attach_floor_callbacks(
             parent_conversation_id=floor.conversation_id,
             max_rounds=max_rounds,
             parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
         )
 
         artifact_path = save_breakout_artifact(result, floor.output.breakout)
@@ -1072,6 +1100,69 @@ async def _attach_floor_callbacks(
         return compact, artifact_path
 
     floor._breakout_callback = _floor_breakout_callback
+
+    _coding_session_count = 0
+
+    async def _floor_coding_session_callback(
+        topic: str,
+        policy: "FloorPolicy",
+        max_rounds: int,
+        agent_specs: list[str],
+    ) -> "tuple[str, object]":
+        from ofp_playground.floor.coding_session import (
+            run_coding_session,
+            save_coding_session_artifact,
+            build_coding_session_notification,
+        )
+
+        nonlocal _coding_session_count
+
+        agents = []
+        temp_bus = MessageBus()
+
+        for spec_str in agent_specs:
+            try:
+                agent = _create_breakout_agent(spec_str, temp_bus, "coding-temp", settings)
+                if agent:
+                    agents.append(agent)
+            except Exception as e:
+                logger.error("Coding session agent creation failed for '%s': %s", spec_str, e)
+                _notify(f"Coding session agent failed: {e}")
+
+        if len(agents) < 1:
+            msg = f"[Coding session: {topic[:60]}] — could not create enough agents ({len(agents)}/1 minimum)."
+            return msg, None
+
+        # Use the session sandbox directory for shared file workspace
+        sandbox_dir = floor.output.sandbox
+
+        result = await run_coding_session(
+            topic=topic,
+            agents=agents,
+            policy=policy,
+            parent_conversation_id=floor.conversation_id,
+            sandbox_dir=sandbox_dir,
+            max_rounds=max_rounds,
+            parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
+        )
+
+        artifact_path = save_coding_session_artifact(result, floor.output.breakout)
+        _notify(f"[CodingSession] Artifact: {artifact_path} | {len(result.files)} files in {sandbox_dir}")
+
+        _coding_session_count += 1
+        if floor._memory_store:
+            floor._memory_store.store(
+                "tasks",
+                f"coding_session_{_coding_session_count}",
+                f"'{result.topic[:60]}' | {result.round_count} rounds | "
+                f"{', '.join(result.agent_names)} | {len(result.files)} files → {sandbox_dir}",
+            )
+
+        compact = build_coding_session_notification(result, artifact_path, _coding_session_count)
+        return compact, artifact_path
+
+    floor._coding_session_callback = _floor_coding_session_callback
 
 
 @click.group()
@@ -1243,7 +1334,7 @@ async def _run_web_session(
     _human_uris: set[str] = set()
     web_renderer = GradioRenderer(agent_names={}, human_uris=_human_uris)
     web_renderer.add_system_event(
-        f"Running in autonomous mode" if no_human else "Interactive mode"
+        "Running in autonomous mode" if no_human else "Interactive mode"
     )
     web_renderer.add_system_event(f"Conversation started (ID: {floor.conversation_id[:8]}...)")
 
@@ -1309,6 +1400,18 @@ async def _run_web_session(
     # Get the running loop and launch Gradio from this coroutine's thread
     loop = asyncio.get_event_loop()
 
+    async def _web_spawn_fn(spec: str) -> None:
+        """Spawn an agent from the Gradio UI into the running session."""
+        try:
+            at, name, desc, model_ov, maxtok_ov, timeout_ov, maxretry_ov = _parse_agent_spec(spec)
+            await _spawn_llm_agent(
+                at, name, desc, floor, bus, registry,
+                term_renderer, settings, model_ov, maxtok_ov,
+                web_renderer=web_renderer,
+            )
+        except Exception as e:
+            web_renderer.add_system_event(f"Spawn failed: {e}")
+
     def _launch():
         launch_web_session(
             floor=floor,
@@ -1321,6 +1424,7 @@ async def _run_web_session(
             port=port,
             share=share,
             gradio_renderer=web_renderer,
+            spawn_fn=_web_spawn_fn,
         )
         console.print(f"[green]Web UI ready → http://{host}:{port}[/green]")
 
@@ -1404,7 +1508,7 @@ def validate(envelope_file: str):
         of_data = data.get("openFloor", data)
         from openfloor import Envelope
         envelope = Envelope(**of_data)
-        console.print(f"[green]✓ Valid OFP envelope[/green]")
+        console.print("[green]✓ Valid OFP envelope[/green]")
         console.print(f"  Conversation: {envelope.conversation.id if envelope.conversation else 'N/A'}")
         console.print(f"  Sender: {envelope.sender.speakerUri if envelope.sender else 'N/A'}")
         console.print(f"  Events: {len(envelope.events or [])}")
