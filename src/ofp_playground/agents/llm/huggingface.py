@@ -10,7 +10,7 @@ from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "MiniMaxAI/MiniMax-M2.5"
+DEFAULT_MODEL = "MiniMaxAI/MiniMax-M2.7"
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 

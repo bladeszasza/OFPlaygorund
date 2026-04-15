@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-RESULT_ROOT = Path("result")
+RESULT_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "result"
 
 
 class SessionOutputManager:

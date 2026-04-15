@@ -7,7 +7,7 @@ import sys
 from typing import Optional, TYPE_CHECKING
 
 from ofp_playground.agents.base import BasePlaygroundAgent
-from ofp_playground.bus.message_bus import MessageBus, FLOOR_MANAGER_URI
+from ofp_playground.bus.message_bus import MessageBus
 
 if TYPE_CHECKING:
     from ofp_playground.renderer.terminal import TerminalRenderer

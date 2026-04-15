@@ -57,7 +57,11 @@
       "Bash(ls /Users/bolyos/Development/ofpPlaygorund/tests/test_coding*.py)",
       "Bash(pytest:*)",
       "Bash(ruff check:*)",
-      "Bash(mypy src/ofp_playground/agents/llm/google_coding.py --no-error-summary)"
+      "Bash(mypy src/ofp_playground/agents/llm/google_coding.py --no-error-summary)",
+      "Bash(bash -n /Users/bolyos/Development/ofpPlaygorund/examples/example_digimon_world_game.sh)",
+      "Bash(.venv/bin/pip show:*)",
+      "Bash(.venv/bin/python -c \"import anthropic; c = anthropic.AsyncAnthropic\\(api_key='x'\\); print\\(dir\\(c.beta.messages\\)\\)\")",
+      "Bash(.venv/bin/python:*)"
     ]
   }
 }

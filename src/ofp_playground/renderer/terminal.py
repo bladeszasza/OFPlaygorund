@@ -1,16 +1,13 @@
 """Rich terminal renderer for OFP conversations."""
 from __future__ import annotations
 
-import time
 from datetime import datetime
 from typing import Optional
 
 from rich.console import Console
-from rich.style import Style
 from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
-from rich import print as rprint
 
 # Color palette for agents
 AGENT_COLORS = [
@@ -115,7 +112,7 @@ class TerminalRenderer:
         table.add_column()
         table.add_column()
         table.add_row(
-            f"[bold]OFP Playground[/bold]",
+            "[bold]OFP Playground[/bold]",
             f"Conv: [dim]{conversation_id[:12]}...[/dim]  "
             f"Policy: [cyan]{policy}[/cyan]  "
             f"Agents: [yellow]{agent_count}[/yellow]",

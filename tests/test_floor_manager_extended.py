@@ -20,7 +20,7 @@ async def _setup_fm_with_orchestrator(policy=FloorPolicy.SHOWRUNNER_DRIVEN):
     fm = FloorManager(bus, policy=policy)
 
     fm_q: asyncio.Queue = asyncio.Queue()
-    await bus.register(FM_URI := FLOOR_MANAGER_URI, fm_q)
+    await bus.register(FLOOR_MANAGER_URI, fm_q)
 
     orc_q: asyncio.Queue = asyncio.Queue()
     orc_uri = "tag:test:orchestrator"
@@ -90,6 +90,22 @@ class TestTaskCompleteDirective:
         # and that the manager transitions to a stopped state.
         await fm._handle_orchestrator_directives("[TASK_COMPLETE]")
         assert not fm._running
+
+    @pytest.mark.asyncio
+    async def test_embedded_task_complete_does_not_stop(self):
+        """[TASK_COMPLETE] mentioned inside planning text must NOT stop the manager."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._running = True  # simulate run() having been called
+        planning_text = (
+            "[ASSIGN Writer]: Write chapter 1\n"
+            "**Plan:**\n"
+            "1. Write chapter\n"
+            "10. Final: emit [TASK_COMPLETE]\n"
+        )
+        fm._agents["tag:ofp-playground.local,2025:llm-writer"] = "Writer"
+        await fm._handle_orchestrator_directives(planning_text)
+        # Manager must still be running — embedded [TASK_COMPLETE] is not a directive
+        assert fm._running
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +290,37 @@ class TestShowrunnerDuplicateSuppression:
         assert fm._assigned_uri == worker_uri
 
     @pytest.mark.asyncio
+    async def test_coding_tool_chatter_does_not_return_floor_or_enter_history(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        worker_uri = "tag:test:igor"
+        fm.register_agent(worker_uri, "Igor")
+        fm._assigned_uri = worker_uri
+        fm.grant_to = AsyncMock()
+
+        from openfloor import Conversation, DialogEvent, Envelope, Sender, TextFeature, Token, UtteranceEvent
+        envelope = Envelope(
+            sender=Sender(speakerUri=worker_uri, serviceUrl="local://worker"),
+            conversation=Conversation(id=fm.conversation_id),
+            events=[],
+        )
+        event = UtteranceEvent(
+            dialogEvent=DialogEvent(
+                id="evt-read",
+                speakerUri=worker_uri,
+                features={
+                    "text": TextFeature(mimeType="text/plain", tokens=[Token(value="[Igor] [read_file] <!DOCTYPE html>")])
+                },
+            )
+        )
+
+        await fm._handle_utterance(envelope, event)
+
+        fm.grant_to.assert_not_called()
+        assert fm._assigned_uri == worker_uri
+        assert len(fm.history) == 0
+
+    @pytest.mark.asyncio
     async def test_duplicate_orchestrator_directive_ignored_while_assigned(self):
         bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
 
@@ -365,7 +412,6 @@ class TestAssignParallelDirective:
         fm._parallel_batch = {aurora_uri, vertex_uri}
 
         grant_calls: list[str] = []
-        original_grant = fm.grant_to
         async def mock_grant(uri):
             grant_calls.append(uri)
         fm.grant_to = mock_grant

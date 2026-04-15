@@ -74,8 +74,8 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
                    [-max-tokens N] [-timeout SECONDS] [-max-retries N]
 
     Examples:
-        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.5
-        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.5
+        hf:Astronomer:You are a skeptical astronomer.:MiniMaxAI/MiniMax-M2.7
+        -provider hf -name Astronomer -system You are a skeptical astronomer. -model MiniMaxAI/MiniMax-M2.7
         -provider hf -name FastTask -timeout 30 -max-retries 2
 
     Returns: (agent_type, name, description, model_override, max_tokens_override, timeout, max_retries)
@@ -86,7 +86,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
 
     if spec.startswith("-"):
         # Flag-based format: find each -flag and collect its value up to the next -flag
-        flag_re = re.compile(r"-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
+        flag_re = re.compile(r"(?<!\w)-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
         matches = list(flag_re.finditer(spec))
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
@@ -425,7 +425,7 @@ async def _run_session(
 def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str, settings: Settings):
     """Create a text-only LLM agent for a breakout session from a spec string.
 
-    Spec format: -provider <p> -name <n> -system <s> [-model <m>]
+    Spec format: -provider <p> -name <n> -system <s> [-model <m>] [-timeout <s>] [-max-retries <n>]
 
     Only text-generation agents are created — no image/video/orchestrator.
     The agent is NOT registered on any floor; the caller wires it.
@@ -434,15 +434,19 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     provider_m = re.search(r"-provider\s+(\S+)", spec_str)
     name_m = re.search(r"-name\s+(\S+)", spec_str)
-    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens)\s|\s*$)", spec_str)
+    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens|timeout|max-retries)\s|\s*$)", spec_str)
     model_m = re.search(r"-model\s+(\S+)", spec_str)
     max_tokens_m = re.search(r"-max-tokens\s+(\d+)", spec_str)
+    timeout_m = re.search(r"-timeout\s+(\S+)", spec_str)
+    max_retries_m = re.search(r"-max-retries\s+(\d+)", spec_str)
 
     provider = provider_m.group(1) if provider_m else "hf"
     name = name_m.group(1) if name_m else "BreakoutAgent"
     system = system_m.group(1).strip() if system_m else f"You are {name}, an AI assistant."
     model_ov = model_m.group(1) if model_m else None
     max_tokens_ov = int(max_tokens_m.group(1)) if max_tokens_m else None
+    timeout_ov = float(timeout_m.group(1)) if timeout_m else None
+    max_retries_ov = int(max_retries_m.group(1)) if max_retries_m else None
 
     agent = None
     if provider in ("anthropic", "claude"):
@@ -490,6 +494,10 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     if agent is not None and max_tokens_ov and hasattr(agent, "_max_tokens"):
         agent._max_tokens = max_tokens_ov
+    if agent is not None and timeout_ov is not None and hasattr(agent, "_timeout"):
+        agent._timeout = timeout_ov
+    if agent is not None and max_retries_ov is not None and hasattr(agent, "_max_retries"):
+        agent._max_retries = max_retries_ov
     return agent
 
 
@@ -957,6 +965,9 @@ async def _spawn_llm_agent(
         # Give all agents access to the shared session memory store
         if hasattr(agent, "set_memory_store"):
             agent.set_memory_store(floor._memory_store)
+        # Give all agents access to the shared phase artifact store
+        if hasattr(agent, "set_artifact_store"):
+            agent.set_artifact_store(floor._artifact_store)
         floor.register_agent(agent.speaker_uri, agent.name)
         registry.register(agent)
         model_name = model_override or getattr(agent, "_model", "default")
@@ -1070,6 +1081,7 @@ async def _attach_floor_callbacks(
             parent_conversation_id=floor.conversation_id,
             max_rounds=max_rounds,
             parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
         )
 
         artifact_path = save_breakout_artifact(result, floor.output.breakout)
@@ -1088,6 +1100,69 @@ async def _attach_floor_callbacks(
         return compact, artifact_path
 
     floor._breakout_callback = _floor_breakout_callback
+
+    _coding_session_count = 0
+
+    async def _floor_coding_session_callback(
+        topic: str,
+        policy: "FloorPolicy",
+        max_rounds: int,
+        agent_specs: list[str],
+    ) -> "tuple[str, object]":
+        from ofp_playground.floor.coding_session import (
+            run_coding_session,
+            save_coding_session_artifact,
+            build_coding_session_notification,
+        )
+
+        nonlocal _coding_session_count
+
+        agents = []
+        temp_bus = MessageBus()
+
+        for spec_str in agent_specs:
+            try:
+                agent = _create_breakout_agent(spec_str, temp_bus, "coding-temp", settings)
+                if agent:
+                    agents.append(agent)
+            except Exception as e:
+                logger.error("Coding session agent creation failed for '%s': %s", spec_str, e)
+                _notify(f"Coding session agent failed: {e}")
+
+        if len(agents) < 1:
+            msg = f"[Coding session: {topic[:60]}] — could not create enough agents ({len(agents)}/1 minimum)."
+            return msg, None
+
+        # Use the session sandbox directory for shared file workspace
+        sandbox_dir = floor.output.sandbox
+
+        result = await run_coding_session(
+            topic=topic,
+            agents=agents,
+            policy=policy,
+            parent_conversation_id=floor.conversation_id,
+            sandbox_dir=sandbox_dir,
+            max_rounds=max_rounds,
+            parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
+        )
+
+        artifact_path = save_coding_session_artifact(result, floor.output.breakout)
+        _notify(f"[CodingSession] Artifact: {artifact_path} | {len(result.files)} files in {sandbox_dir}")
+
+        _coding_session_count += 1
+        if floor._memory_store:
+            floor._memory_store.store(
+                "tasks",
+                f"coding_session_{_coding_session_count}",
+                f"'{result.topic[:60]}' | {result.round_count} rounds | "
+                f"{', '.join(result.agent_names)} | {len(result.files)} files → {sandbox_dir}",
+            )
+
+        compact = build_coding_session_notification(result, artifact_path, _coding_session_count)
+        return compact, artifact_path
+
+    floor._coding_session_callback = _floor_coding_session_callback
 
 
 @click.group()

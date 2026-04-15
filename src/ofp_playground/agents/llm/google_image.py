@@ -17,6 +17,92 @@ from ofp_playground.bus.message_bus import MessageBus
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("ofp-images")
+
+
+def _sniff_mime(path: Path, fallback: str = "image/png") -> str:
+    """Detect image MIME type from file magic bytes. Falls back to *fallback*."""
+    try:
+        header = path.read_bytes()[:12]
+        if header[:4] == b"\x89PNG":
+            return "image/png"
+        if header[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if header[:4] in (b"GIF8", b"GIF9"):
+            return "image/gif"
+        if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+            return "image/webp"
+    except OSError:
+        pass
+    return fallback
+
+
+# ---------------------------------------------------------------------------
+# Image prompt recovery from manuscript (defense-in-depth)
+# ---------------------------------------------------------------------------
+
+# Boundaries that terminate a PROMPT: block inside the manuscript.
+_IMAGE_PROMPT_BLOCK_END_RE = re.compile(
+    r"^(?:"
+    r"NEGATIVE PROMPT:"
+    r"|PAINTER'S NOTE:"
+    r"|[A-Z][A-Z \-]{3,}:"
+    r"|\[(?:audio|image|video|auto-accepted)"
+    r"|--- (?:END|SESSION|BREAKOUT)"
+    r")",
+    re.MULTILINE,
+)
+
+
+def _recover_image_prompt_from_manuscript(raw_text: str) -> str | None:
+    """Extract the last PROMPT: block from the STORY SO FAR section.
+
+    When the Showrunner truncates its PROMPT paste (copying only the first
+    line), the full CoverArtist output is still present inside the manuscript
+    injected as ``--- STORY SO FAR ---``.  This function finds and returns
+    that full block so the image agent can use it instead.
+
+    Returns ``None`` if no suitable image PROMPT block is found.
+    """
+    start = raw_text.find("--- STORY SO FAR")
+    if start < 0:
+        return None
+    end = raw_text.find("--- END OF STORY SO FAR", start)
+    manuscript = raw_text[start:end] if end > start else raw_text[start:]
+
+    best: str | None = None
+    for m in re.finditer(r"^PROMPT:\s*\n?", manuscript, re.MULTILINE):
+        boundary = _IMAGE_PROMPT_BLOCK_END_RE.search(manuscript, m.end())
+        body = manuscript[m.end():boundary.start() if boundary else len(manuscript)].strip()
+        if len(body.split()) >= 10:  # skip stub entries
+            best = body
+
+    if not best:
+        return None
+
+    clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", best)
+    clean = re.sub(r"#{1,6}\s*", "", clean)
+    clean = re.sub(r"---+", "", clean)
+    clean = re.sub(
+        r"\[(?:DIRECTIVE|DIRECTOR|floor-manager|ASSIGN|ACCEPT|REJECT|KICK|BREAKOUT)[^\]]*\][^\n]*",
+        "", clean, flags=re.IGNORECASE,
+    )
+    return clean.strip() or None
+
+
+def _image_prompt_looks_truncated(prompt: str) -> bool:
+    """Return True if the prompt appears to be a short structured PROMPT: snippet.
+
+    A complete image prompt after a ``PROMPT:`` keyword is typically 50+ words.
+    When the Showrunner only copied the first line (or the keyword lands on its
+    own line), the content will be < 20 words — including zero words when the
+    regex captured just ``PROMPT:`` with nothing following it.
+    """
+    m = re.search(r"\bPROMPT:\s*(.*)", prompt, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return False
+    return len(m.group(1).split()) < 20
+
+
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 # Fallback chain: Nano Banana 2 → Nano Banana Pro → Nano Banana
 IMAGE_MODELS = [
@@ -57,6 +143,7 @@ class GeminiImageAgent(BasePlaygroundAgent):
         self._has_floor = False
         self._last_text: Optional[str] = None
         self._raw_prompt: Optional[str] = None
+        self._last_directive_text: Optional[str] = None  # full DIRECTIVE text incl. STORY SO FAR
         self._output_dir: Path = OUTPUT_DIR
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,10 +209,15 @@ class GeminiImageAgent(BasePlaygroundAgent):
             text_parts: list[str] = []
             for part in (response.parts or []):
                 if part.inline_data is not None:
-                    image = part.as_image()
+                    inline_mime = (getattr(part.inline_data, "mime_type", None) or "image/png").lower()
+                    ext = "jpg" if "jpeg" in inline_mime else "png"
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    save_path = self._output_dir / f"{ts}_{self._name.lower()}.png"
-                    image.save(str(save_path))
+                    save_path = self._output_dir / f"{ts}_{self._name.lower()}.{ext}"
+                    raw_bytes = getattr(part.inline_data, "data", None)
+                    if raw_bytes:
+                        save_path.write_bytes(raw_bytes)
+                    else:
+                        part.as_image().save(str(save_path))
                     return save_path, ""
                 if getattr(part, "text", None):
                     text_parts.append(part.text)
@@ -190,6 +282,7 @@ class GeminiImageAgent(BasePlaygroundAgent):
             # Check for orchestrator [DIRECTIVE for Name]: instruction
             text = self._extract_text_from_envelope(envelope)
             if text:
+                self._last_directive_text = text  # preserve full text incl. STORY SO FAR
                 m = re.search(rf"\[DIRECTIVE for {re.escape(self._name)}\]:\s*(.+)", text, re.IGNORECASE)
                 if m:
                     self._raw_prompt = m.group(1).strip()
@@ -198,6 +291,13 @@ class GeminiImageAgent(BasePlaygroundAgent):
 
         text = self._extract_text_from_envelope(envelope)
         if not text:
+            return
+
+        # Ignore orchestrator control directives broadcast to all agents — they are
+        # handled by the FloorManager which sends us targeted [DIRECTIVE for Name]
+        # messages.  Acting on [REJECT]/[ASSIGN]/[ACCEPT] here would cause us to
+        # generate images using the directive text as the prompt.
+        if re.search(r"\[(?:REJECT|ASSIGN(?:_PARALLEL)?|ACCEPT|KICK|SPAWN|TASK_COMPLETE)\b", text, re.IGNORECASE):
             return
 
         image_match = re.search(r"\[IMAGE\]:\s*(.+)", text, re.IGNORECASE)
@@ -216,16 +316,27 @@ class GeminiImageAgent(BasePlaygroundAgent):
         self._has_floor = True
         try:
             prompt = self._raw_prompt or (self._build_prompt(self._last_text) if self._last_text else None)
+            # Defense-in-depth: if the prompt looks like a truncated PROMPT: snippet,
+            # recover the full block from the STORY SO FAR injected by the FloorManager.
+            if prompt and self._last_directive_text and _image_prompt_looks_truncated(prompt):
+                recovered = _recover_image_prompt_from_manuscript(self._last_directive_text)
+                if recovered:
+                    logger.info(
+                        "[%s] Showrunner truncated PROMPT paste — recovered full image prompt from manuscript",
+                        self._name,
+                    )
+                    prompt = recovered
             if prompt:
                 logger.info("[%s] Generating Gemini image: %s", self._name, prompt[:80])
                 result = await self._generate_image(prompt)
                 if result:
                     path, model_used = result
                     fallback_note = f" (used {model_used} — primary model was busy)" if model_used != self._model else ""
-                    text_desc = f"Generated image for: {prompt[:200]}{fallback_note}"
+                    text_desc = f"Image saved as {path.name}{fallback_note}. Prompt: {prompt[:160]}"
+                    mime = _sniff_mime(path)
                     await self.send_envelope(
                         self._make_media_utterance_envelope(
-                            text_desc, "image", "image/png", str(path.resolve())
+                            text_desc, "image", mime, str(path.resolve())
                         )
                     )
         except Exception as e:
@@ -234,6 +345,7 @@ class GeminiImageAgent(BasePlaygroundAgent):
             self._has_floor = False
             self._last_text = None
             self._raw_prompt = None
+            self._last_directive_text = None
             await self.yield_floor()
 
     async def _dispatch(self, envelope: Envelope) -> None:
@@ -372,6 +484,7 @@ class GeminiVisionAgent(BaseLLMAgent):
 
         try:
             image_bytes = Path(path).read_bytes()
+            mime_type = _sniff_mime(Path(path), fallback=mime_type)
         except Exception as e:
             logger.error("[%s] Could not read image %s: %s", self._name, path, e)
             return None

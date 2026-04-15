@@ -77,6 +77,7 @@ class Utterance:
         speaker_name: str,
         text_description: str,
         image_path: str,
+        mime_type: str = "image/png",
     ) -> "Utterance":
         """Factory for image utterances with text fallback description."""
         return cls(
@@ -90,7 +91,7 @@ class Utterance:
                 ),
                 "image": ArtifactFeature(
                     feature_key="image",
-                    mime_type="image/png",
+                    mime_type=mime_type,
                     value_url=image_path,
                 ),
             },

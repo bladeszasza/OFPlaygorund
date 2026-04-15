@@ -60,7 +60,7 @@ BasePlaygroundAgent
     ├── DirectorAgent    — narrative director (ROUND_ROBIN); grants turn per agent each round
     ├── PerceptionBase subclasses (classifier, detector, ocr, ner, multimodal)
     ├── ShowrunnerAgent  — orchestrator that drives SHOWRUNNER_DRIVEN policy
-    └── BaseCodingAgent(ABC)  — code generation base; task defaults _timeout=300s, _max_retries=2
+    └── BaseCodingAgent(ABC)  — code generation base; task defaults _timeout=None (unlimited), _max_retries=2
         ├── OpenAICodingAgent   — Responses API + code_interpreter (default: gpt-5.4-long-context)
         ├── AnthropicCodingAgent — code_execution_20250825 beta (default: claude-opus-4-6)
         └── GoogleCodingAgent   — ToolCodeExecution (default: gemini-3-flash-preview)
@@ -132,6 +132,16 @@ An orchestrator can spin up an isolated sub-floor conversation via the `create_b
 - Ends when `max_rounds` utterances are exchanged or any agent emits `[BREAKOUT_COMPLETE]`.
 - Results are saved under `result/<session>/breakout/` as structured Markdown and a compact notification is returned to the parent orchestrator.
 - Hard timeout: 300 seconds. Only one nesting level is permitted.
+
+### Conversation Trace & Timeline
+
+Every session automatically records a full OFP event trace via `trace/`:
+
+- **[EventCollector](src/ofp_playground/trace/collector.py)** — attached to the `MessageBus` via `set_collector()`; normalizes each routed envelope into a `TraceEvent` (sender, recipients, event type, summary, directive detection, media type, breakout scope).
+- **[TraceEvent](src/ofp_playground/trace/model.py)** — frozen dataclass with routing metadata: `sender_uri/name`, `route_uris/names`, `explicit_target_uris`, `is_private`, `is_broadcast`, `directive`, `breakout_id`, and the full `envelope_json`.
+- **[render_trace_html](src/ofp_playground/trace/renderer.py)** — generates a self-contained D3-based interactive HTML timeline. Written to `result/<session>/trace.html` automatically at session end by `FloorManager._output_trace_timeline()`.
+
+The FloorManager initialises the collector at startup and registers each joining agent. The MessageBus calls `collector.record()` after every routing decision. No CLI flag needed — trace is always on.
 
 ### In-Session Memory Store
 

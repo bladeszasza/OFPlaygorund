@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat /Users/bolyos/Development/ofpPlaygorund/agents/moltbook/*/SOUL.md)",
+      "Bash(ofp-playground start:*)",
+      "Bash(chmod +x /Users/bolyos/Development/ofpPlaygorund/examples/example_manga_universe.sh)",
+      "Bash(bash -n /Users/bolyos/Development/ofpPlaygorund/examples/example_manga_universe.sh)",
+      "Bash(git:*)",
+      "Read(//Users/bolyos/Development/ofpPlaygorund/**)",
+      "Bash(ofp-playground agents:*)",
+      "Bash(python -m ofp_playground.agents.library)",
+      "Bash(python -c \"from src.ofp_playground.agents.library import list_agents; agents = list_agents\\(\\); print\\([a for a in agents if 'blocky' in a or 'geometry' in a]\\)\")",
+      "Bash(python -c \"from src.ofp_playground.agents.library import AgentLibrary; lib = AgentLibrary\\(\\); slugs = lib.list_slugs\\(\\); print\\([s for s in slugs if 'blocky' in s or 'geometry' in s]\\)\")",
+      "Bash(python -c \"import src.ofp_playground.agents.library as lib; print\\(dir\\(lib\\)\\)\")",
+      "Bash(python -c \"from src.ofp_playground.agents.library import load; agents = load\\(\\); print\\([k for k in agents if 'blocky' in k or 'geometry' in k]\\)\")",
+      "Bash(chmod +x:*)",
+      "Bash(python -c \"from src.ofp_playground.agents.library import load; agents = load\\(\\); new = [k for k in agents if any\\(x in k for x in ['theme-asset', 'platformer-arch']\\)]; print\\(new\\)\")",
+      "Bash(node -e ':*)",
+      "Bash(wc:*)",
+      "Bash(node:*)",
+      "Bash(grep -E \"^#{1,3} |PHASE|Palette|assets|Hero|Obstacle|Collectible|Platform|Prop|ASTRONAUT|DIMETRODON|Dimetrodon|hungarian|Hungarian\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 *)",
+      "Bash(grep -v \"^--$\")",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(ruff check *)",
+      "Bash(python -m pytest tests/ -q)"
+    ]
+  }
+}
