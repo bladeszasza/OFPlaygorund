@@ -38,6 +38,39 @@ from ofp_playground.trace import EventCollector, render_trace_html
 logger = logging.getLogger(__name__)
 
 FLOOR_MANAGER_NAME = "Floor Manager"
+
+
+def _looks_like_internal_coding_progress(sender_name: str, text: str) -> bool:
+    """Return True for coding-agent progress whispers that should stay internal.
+
+    Coding agents emit private liveness/tool messages like:
+      [DevAlpha] Starting coding task...
+      [DevAlpha] [read_file] ...
+      [DevAlpha] [write_file] Created: main.js
+
+    These are not completed worker outputs and must not enter conversation
+    history or return the floor to the orchestrator.
+    """
+    if not text or not text.startswith(f"[{sender_name}]"):
+        return False
+
+    suffix = text[len(f"[{sender_name}]"):].lstrip()
+    if suffix.startswith("[") and "]" in suffix:
+        return True
+
+    return any(
+        marker in text
+        for marker in (
+            "Starting coding task",
+            "Running code_interpreter",
+            "Sending to Gemini code execution",
+            "Sending to Anthropic code_execution",
+            "Output:",
+            "Saved ",
+            "Directive requested text-only mode",
+            "Tool mode unavailable, retrying without tools",
+        )
+    )
 FLOOR_MANAGER_URI_STR = FLOOR_MANAGER_URI
 ORCHESTRATOR_RECOVERY_BASE_DELAY_S = 0.5
 ORCHESTRATOR_RECOVERY_MAX_DELAY_S = 3.0
@@ -354,30 +387,15 @@ class FloorManager:
                     media_mime = getattr(feat, "mimeType", None) or None
                     break
 
-        # Coding agents send private liveness whispers (e.g. "Running code_interpreter...").
+        # Coding agents send private liveness/tool whispers while they work.
         # Those are not completed worker outputs and must not return the floor.
         if (
             self._orchestrator_uri
             and self._assigned_uri
             and sender_uri == self._assigned_uri
             and text
-            and text.startswith(f"[{sender_name}]")
-            and any(
-                marker in text
-                for marker in (
-                    "Starting coding task",
-                    "Running code_interpreter",
-                    "Sending to Gemini code execution",
-                    "Sending to Anthropic code_execution",
-                    "Output:",
-                    "Saved ",
-                    "Directive requested text-only mode",
-                    "Tool mode unavailable, retrying without tools",
-                )
-            )
+            and _looks_like_internal_coding_progress(sender_name, text)
         ):
-            if self._renderer:
-                self._renderer.show_system_event(text)
             return
 
         # Build typed Utterance and store in history

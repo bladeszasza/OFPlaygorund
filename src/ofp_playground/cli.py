@@ -425,7 +425,7 @@ async def _run_session(
 def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str, settings: Settings):
     """Create a text-only LLM agent for a breakout session from a spec string.
 
-    Spec format: -provider <p> -name <n> -system <s> [-model <m>]
+    Spec format: -provider <p> -name <n> -system <s> [-model <m>] [-timeout <s>] [-max-retries <n>]
 
     Only text-generation agents are created — no image/video/orchestrator.
     The agent is NOT registered on any floor; the caller wires it.
@@ -434,15 +434,19 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     provider_m = re.search(r"-provider\s+(\S+)", spec_str)
     name_m = re.search(r"-name\s+(\S+)", spec_str)
-    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens)\s|\s*$)", spec_str)
+    system_m = re.search(r"-system\s+(.+?)(?:\s+-(?:model|max-tokens|timeout|max-retries)\s|\s*$)", spec_str)
     model_m = re.search(r"-model\s+(\S+)", spec_str)
     max_tokens_m = re.search(r"-max-tokens\s+(\d+)", spec_str)
+    timeout_m = re.search(r"-timeout\s+(\S+)", spec_str)
+    max_retries_m = re.search(r"-max-retries\s+(\d+)", spec_str)
 
     provider = provider_m.group(1) if provider_m else "hf"
     name = name_m.group(1) if name_m else "BreakoutAgent"
     system = system_m.group(1).strip() if system_m else f"You are {name}, an AI assistant."
     model_ov = model_m.group(1) if model_m else None
     max_tokens_ov = int(max_tokens_m.group(1)) if max_tokens_m else None
+    timeout_ov = float(timeout_m.group(1)) if timeout_m else None
+    max_retries_ov = int(max_retries_m.group(1)) if max_retries_m else None
 
     agent = None
     if provider in ("anthropic", "claude"):
@@ -490,6 +494,10 @@ def _create_breakout_agent(spec_str: str, bus: MessageBus, conversation_id: str,
 
     if agent is not None and max_tokens_ov and hasattr(agent, "_max_tokens"):
         agent._max_tokens = max_tokens_ov
+    if agent is not None and timeout_ov is not None and hasattr(agent, "_timeout"):
+        agent._timeout = timeout_ov
+    if agent is not None and max_retries_ov is not None and hasattr(agent, "_max_retries"):
+        agent._max_retries = max_retries_ov
     return agent
 
 

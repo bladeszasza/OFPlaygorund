@@ -122,6 +122,13 @@ def build_coding_session_tool(settings: "Settings") -> list[dict]:
                                     "type": "string",
                                     "description": "Optional model override",
                                 },
+                                "timeout": {
+                                    "type": "number",
+                                    "description": (
+                                        "Optional per-call timeout in seconds for this "
+                                        "coding-session agent. Defaults to 1200 seconds."
+                                    ),
+                                },
                             },
                             "required": ["name", "system", "provider"],
                         },
@@ -145,7 +152,7 @@ def tool_use_to_coding_session_directive(args: dict) -> str:
     Format::
 
         [CODING_SESSION policy=<p> max_rounds=<n> topic=<t>]
-        [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
+        [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>] [-timeout <seconds>]]
         ...
     """
     topic = args.get("topic", "")
@@ -159,8 +166,9 @@ def tool_use_to_coding_session_directive(args: dict) -> str:
         system = agent.get("system", "")
         provider = agent.get("provider", "openai")
         model_part = f" -model {agent['model']}" if agent.get("model") else ""
+        timeout_part = f" -timeout {agent['timeout']}" if agent.get("timeout") is not None else ""
         lines.append(
-            f"[CODING_AGENT -provider {provider} -name {name} -system {system}{model_part}]"
+            f"[CODING_AGENT -provider {provider} -name {name} -system {system}{model_part}{timeout_part}]"
         )
     return "\n".join(lines)
 

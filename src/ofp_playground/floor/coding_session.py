@@ -64,6 +64,7 @@ from ofp_playground.models.artifact import Utterance
 logger = logging.getLogger(__name__)
 
 CODING_FM_URI = "tag:ofp-playground.local,2025:coding-session-manager"
+DEFAULT_CODING_AGENT_TIMEOUT_SECONDS = 1200.0
 
 _CODE_BLOCK_RE = re.compile(
     r"```(?:(\w+))?[ \t]*(?://\s*(?:file(?:name)?|path)\s*:\s*(\S+))?\n(.*?)```",
@@ -799,7 +800,8 @@ async def run_coding_session(
         agent._pending_context = []
         agent._has_floor = False
         agent._pending_floor_request = False
-        agent._timeout = None  # unlimited for coding
+        if getattr(agent, "_timeout", None) is None:
+            agent._timeout = DEFAULT_CODING_AGENT_TIMEOUT_SECONDS
         session_mgr.register_agent(agent.speaker_uri, agent.name)
         await coding_bus.register(agent.speaker_uri, agent._queue)
 

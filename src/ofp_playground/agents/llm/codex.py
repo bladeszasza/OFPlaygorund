@@ -96,7 +96,7 @@ class BaseCodingAgent(BaseLLMAgent, abc.ABC):
             api_key=api_key,
         )
         # Task defaults — code execution is expensive and slow
-        self._timeout = 300.0
+        self._timeout = 1200.0
         self._max_retries = 2
         self._task_directive: str = ""
         self._output_dir: Path = OUTPUT_DIR

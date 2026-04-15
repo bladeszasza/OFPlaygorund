@@ -1,13 +1,13 @@
 """Tests for coding sessions — tools, executor, session manager, directives."""
-import os
 import pytest
-from pathlib import Path
 
 from ofp_playground.bus.message_bus import MessageBus
+from ofp_playground.cli import _create_breakout_agent
 from ofp_playground.floor.policy import FloorPolicy
 from ofp_playground.floor.coding_session import (
     CodingSessionManager,
     CODING_FM_URI,
+    DEFAULT_CODING_AGENT_TIMEOUT_SECONDS,
     _build_workspace_snapshot,
     _extract_and_save_code_blocks,
 )
@@ -273,6 +273,17 @@ class TestToolSchemas:
         assert "openai" in providers
         assert "google" not in providers
 
+    def test_build_coding_session_tool_includes_timeout_field(self):
+        from unittest.mock import MagicMock
+        settings = MagicMock()
+        settings.get_anthropic_key.return_value = None
+        settings.get_openai_key.return_value = "sk-test"
+        settings.get_google_key.return_value = None
+        settings.get_huggingface_key.return_value = None
+        tools = build_coding_session_tool(settings)
+        agent_props = tools[0]["input_schema"]["properties"]["agents"]["items"]["properties"]
+        assert "timeout" in agent_props
+
 
 # ---------------------------------------------------------------------------
 # Directive converter
@@ -301,6 +312,37 @@ class TestDirectiveConverter:
             ],
         })
         assert "-model gpt-5.4" in result
+
+    def test_with_timeout(self):
+        result = tool_use_to_coding_session_directive({
+            "topic": "test",
+            "agents": [
+                {"name": "A", "provider": "openai", "system": "sys", "timeout": 1200},
+            ],
+        })
+        assert "-timeout 1200" in result
+
+
+class TestCodingAgentSpecParsing:
+    def test_create_breakout_agent_applies_timeout_override(self):
+        from unittest.mock import MagicMock
+
+        settings = MagicMock()
+        settings.get_openai_key.return_value = "sk-test"
+        settings.get_anthropic_key.return_value = None
+        settings.get_google_key.return_value = None
+        settings.get_huggingface_key.return_value = None
+        settings.defaults.llm_model_openai = "gpt-5.4-nano"
+
+        agent = _create_breakout_agent(
+            "-provider openai -name DevAlpha -system You are a coder -timeout 1200",
+            MessageBus(),
+            "conv:test",
+            settings,
+        )
+
+        assert agent is not None
+        assert agent._timeout == 1200.0
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +373,9 @@ class TestCodingSessionManager:
         mgr.register_agent("tag:test:coder-1", "Dev1")
         assert "tag:test:coder-1" in mgr._agents
         assert mgr._agents["tag:test:coder-1"] == "Dev1"
+
+    def test_default_coding_agent_timeout_constant(self):
+        assert DEFAULT_CODING_AGENT_TIMEOUT_SECONDS == 1200.0
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ def test_task_type(tmp_path):
 
 def test_task_defaults_applied(tmp_path):
     agent = _make_base_agent(tmp_path)
-    assert agent._timeout == 300.0
+    assert agent._timeout == 1200.0
     assert agent._max_retries == 2
 
 

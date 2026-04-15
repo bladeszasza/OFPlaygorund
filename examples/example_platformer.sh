@@ -245,11 +245,12 @@ Use read_artifact to retrieve the key phase outputs. Include the geometry code (
 After DevAlpha delivers main.js, use the create_coding_session tool to launch a refinement session.
 
 Use read_artifact to compose a focused topic brief. Include the geometry code (Phase 3), texture specs (Phase 4), mechanics (Phase 6), and atmosphere (Phase 7) in the topic. Omit design-phase narrative — coding agents need only implementation specs.
+Set each coding agent timeout to 1200 seconds.
   policy: round_robin
   max_rounds: 6
   agents:
-    - name: DevAlpha,  provider: openai,    model: gpt-5.4-2026-03-05,      system: @development/threejs-developer
-    - name: DevBeta,   provider: openai,    model: gpt-5.4-2026-03-05, system: @development/geometry-builder
+    - name: DevAlpha,  provider: openai,    model: gpt-5.4-2026-03-05,      system: @development/threejs-developer, timeout: 1200
+    - name: DevBeta,   provider: openai,    model: gpt-5.4-2026-03-05, system: @development/geometry-builder, timeout: 1200
 
 TARGET PROJECT STRUCTURE (file://-safe runtime):
   index.html   — loads three.min.js from CDN as classic script, then <script src="./main.js" defer>
@@ -299,5 +300,5 @@ ofp-playground start \
   --agent "-provider openai -type text-to-image -name TextureGen" \
   --agent "-provider openai -name GameArchitect -system @development/platformer-architect -model gpt-5.4-2026-03-05" \
   --agent "-provider openai -name SceneComposer -system @creative/3d-scene-composer -model gpt-5.4-2026-03-05" \
-  --agent "anthropic:code-generation:DevAlpha:@development/threejs-developer:claude-sonnet-4-6" \
-  --agent "openai:code-generation:DevBeta:@development/geometry-builder:gpt-5.4-2026-03-05"
+  --agent "-provider anthropic -type code-generation -name DevAlpha -system @development/threejs-developer -model claude-sonnet-4-6 -timeout 1200" \
+  --agent "-provider openai -type code-generation -name DevBeta -system @development/geometry-builder -model gpt-5.4-2026-03-05 -timeout 1200"
