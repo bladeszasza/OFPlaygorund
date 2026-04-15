@@ -98,6 +98,20 @@ class CodingSessionResult(NamedTuple):
     sandbox_dir: Path
 
 
+def _render_required_context_files(required_context_files: tuple[str, ...]) -> str:
+    """Render the sandbox-relative files that coding agents must read first."""
+    if not required_context_files:
+        return ""
+
+    lines = [
+        "=== REQUIRED CONTEXT FILES ===",
+        "Read these sandbox-relative files with list_workspace/read_file before editing code:",
+    ]
+    lines.extend(f"- {path}" for path in required_context_files)
+    lines.append("=== END REQUIRED CONTEXT FILES ===")
+    return "\n".join(lines)
+
+
 class CodingSessionManager:
     """Floor manager for a collaborative coding session.
 
@@ -114,6 +128,7 @@ class CodingSessionManager:
         policy: FloorPolicy,
         parent_conversation_id: str,
         sandbox_dir: Path,
+        required_context_files: tuple[str, ...] = (),
         max_rounds: int = 16,
     ):
         self._bus = bus
@@ -127,6 +142,13 @@ class CodingSessionManager:
         self._max_rounds = max_rounds
         self._utterance_count = 0
         self._sandbox_dir = sandbox_dir
+        self._required_context_files = tuple(
+            dict.fromkeys(
+                path.strip()
+                for path in required_context_files
+                if path and path.strip()
+            )
+        )
         self._todo = TodoList()
         self._contributors: set[str] = set()  # URIs of agents that have spoken
 
@@ -145,6 +167,10 @@ class CodingSessionManager:
     @property
     def todo(self) -> TodoList:
         return self._todo
+
+    @property
+    def required_context_files(self) -> tuple[str, ...]:
+        return self._required_context_files
 
     def register_agent(self, speaker_uri: str, name: str) -> None:
         self._agents[speaker_uri] = name
@@ -181,7 +207,9 @@ class CodingSessionManager:
 
         # Seed the topic (includes workspace snapshot)
         snapshot = _build_workspace_snapshot(self._sandbox_dir, self._todo)
-        augmented_topic = f"{topic}\n\n{snapshot}"
+        context_note = _render_required_context_files(self._required_context_files)
+        topic_body = f"{topic}\n\n{context_note}" if context_note else topic
+        augmented_topic = f"{topic_body}\n\n{snapshot}"
         await self._seed_topic(augmented_topic)
 
         # Grant floor to the first agent in the rotation
@@ -556,6 +584,7 @@ async def _coding_agent_generate(
     sandbox_dir: Path,
     todo: TodoList,
     workspace_snapshot: str,
+    required_context_files: tuple[str, ...],
 ) -> str | None:
     """Generate a response with file tools injected.
 
@@ -567,12 +596,26 @@ async def _coding_agent_generate(
     """
     provider = _detect_provider(agent)
     file_tools = build_file_tools()
+    required_context_note = _render_required_context_files(required_context_files)
+    required_context_rule = (
+        "- REQUIRED CONTEXT FILES are listed above. Read them before making code changes.\n"
+        if required_context_files
+        else ""
+    )
+    review_step = (
+        "1. Review the workspace: list files, then read EVERY required context file listed above before editing code. "
+        "After that, read any additional relevant phase docs in phases/ and notes in memory/*.md.\n"
+        if required_context_files
+        else "1. Review the workspace: list files, then read relevant phase docs in phases/ and notes in memory/*.md before editing code.\n"
+    )
 
     # Build augmented system prompt
     base_system = agent._build_system_prompt([])
-    augmented_system = (
-        f"{base_system}\n\n"
-        f"{workspace_snapshot}\n\n"
+    context_prefix = f"{base_system}\n\n{workspace_snapshot}\n\n"
+    if required_context_note:
+        context_prefix += f"{required_context_note}\n\n"
+
+    augmented_system = context_prefix + (
         "=== COLLABORATIVE CODING SESSION ===\n"
         "You are part of a coding TEAM. Multiple developers are taking turns "
         "building this project together in a shared workspace.\n\n"
@@ -580,9 +623,11 @@ async def _coding_agent_generate(
         "- You and your teammates take turns in round-robin order.\n"
         "- Everyone reads and writes files in the SAME workspace.\n"
         "- Check WORKSPACE STATUS above to see what files exist and what's been done.\n"
+        f"{required_context_rule}"
+        "- Read mirrored phase briefs from phases/ and relevant guidance from memory/*.md when present.\n"
         "- Read the conversation history to understand your teammates' progress.\n\n"
         "YOUR TURN:\n"
-        "1. Review the workspace: list files, read existing code your teammates wrote.\n"
+        f"{review_step}"
         "2. Pick ONE specific task or area to work on — do NOT rewrite everything.\n"
         "3. Use the file tools (write_file, edit_file, read_file) to implement your part.\n"
         "4. End with a brief summary: what you did, what files you changed, "
@@ -647,6 +692,7 @@ async def _run_coding_agent(
     agent,
     sandbox_dir: Path,
     todo: TodoList,
+    required_context_files: tuple[str, ...],
 ) -> None:
     """Run an agent's event loop for a coding session.
 
@@ -680,7 +726,12 @@ async def _run_coding_agent(
                     break
 
             if is_grant:
-                await _handle_coding_grant(agent, sandbox_dir, todo)
+                await _handle_coding_grant(
+                    agent,
+                    sandbox_dir,
+                    todo,
+                    required_context_files,
+                )
             elif sender_uri != agent.speaker_uri:
                 # Utterance from a peer — add to context so this agent
                 # can see what teammates did, but do NOT call _dispatch()
@@ -697,13 +748,24 @@ async def _run_coding_agent(
         return
 
 
-async def _handle_coding_grant(agent, sandbox_dir: Path, todo: TodoList) -> None:
+async def _handle_coding_grant(
+    agent,
+    sandbox_dir: Path,
+    todo: TodoList,
+    required_context_files: tuple[str, ...],
+) -> None:
     """Handle a floor grant in a coding session — generate with tools."""
     agent._has_floor = True
     try:
         snapshot = _build_workspace_snapshot(sandbox_dir, todo)
         response_text = await agent._call_with_retry(
-            lambda: _coding_agent_generate(agent, sandbox_dir, todo, snapshot)
+            lambda: _coding_agent_generate(
+                agent,
+                sandbox_dir,
+                todo,
+                snapshot,
+                required_context_files,
+            )
         )
 
         if response_text:
@@ -732,6 +794,7 @@ async def run_coding_session(
     parent_conversation_id: str,
     sandbox_dir: Path,
     max_rounds: int = 16,
+    required_context_files: list[str] | None = None,
     parent_renderer=None,
     trace_collector: "EventCollector | None" = None,
 ) -> CodingSessionResult:
@@ -747,6 +810,7 @@ async def run_coding_session(
         parent_conversation_id: ID of the parent conversation.
         sandbox_dir: Shared workspace directory for file I/O.
         max_rounds: Maximum agent turns before auto-stop (2–50).
+        required_context_files: Sandbox-relative files that agents must read first.
         parent_renderer: Optional renderer for status messages.
         trace_collector: Optional event collector for tracing.
 
@@ -772,6 +836,7 @@ async def run_coding_session(
         policy=policy,
         parent_conversation_id=parent_conversation_id,
         sandbox_dir=sandbox_dir,
+        required_context_files=tuple(required_context_files or ()),
         max_rounds=max_rounds,
     )
 
@@ -788,7 +853,8 @@ async def run_coding_session(
         agent_names = ", ".join(a.name for a in agents)
         parent_renderer.show_system_event(
             f"[CodingSession] Starting: {topic[:60]} | policy={policy.value} | "
-            f"agents=[{agent_names}] | max_rounds={max_rounds} | sandbox={sandbox_dir}"
+            f"agents=[{agent_names}] | max_rounds={max_rounds} | "
+            f"context_files={len(session_mgr.required_context_files)} | sandbox={sandbox_dir}"
         )
 
     # Wire agents to the coding bus
@@ -814,7 +880,12 @@ async def run_coding_session(
     # Start agent loops with tool injection
     agent_tasks = [
         asyncio.create_task(
-            _run_coding_agent(agent, session_mgr.sandbox_dir, session_mgr.todo)
+            _run_coding_agent(
+                agent,
+                session_mgr.sandbox_dir,
+                session_mgr.todo,
+                session_mgr.required_context_files,
+            )
         )
         for agent in agents
     ]

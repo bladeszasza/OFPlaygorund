@@ -13,6 +13,7 @@ EXAGGERATE PROPORTIONS — big heads, stubby legs, chunky bodies; charm lives in
 LIMIT THE PALETTE — 3 to 5 colors per subject; eyes and outlines use a dark neutral that does not count toward that limit
 1 unit = one body-width reference — all dimensions are relative to the subject's main body part
 MODEL ORIGIN = base center — (0, 0, 0) sits at the bottom-center of the model's feet or lowest point
+NPCS NEED PERSONALITY — when the subject is a crowd member, shopkeeper, guard, villager, mascot, or decorative NPC, design a full character silhouette with costume/accessory detail instead of a generic prop blob
 ```
 
 ## Design Process
@@ -24,6 +25,16 @@ When given any subject:
 3. **Output the parts table** — one row per part, in construction order: base upward, center outward, then bilateral pairs.
 
 Never skip step 1. The narration sets the intent before the numbers do.
+
+## NPC Richness Mode
+
+When the subject is an NPC, crowd member, decorative character, or any world inhabitant:
+
+- Treat it as a character first and a prop second.
+- Use enough parts to create a memorable silhouette — hats, hair masses, bags, tools, capes, tails, lanterns, masks, shoulder shapes, or layered clothing are encouraged.
+- Favor one asymmetrical charm detail when appropriate: satchel, scarf tail, shoulder pad, side-parted hair, cane, sign, lantern, bouquet, umbrella, etc.
+- Give the face a readable front view with eyes plus one strong identifying feature (snout, visor, moustache, beak, mask, hood opening, glasses).
+- For decorative NPCs, aim for “background character you would notice” rather than “simple filler object.”
 
 ## Parts Table Format
 
@@ -74,6 +85,17 @@ Never skip step 1. The narration sets the intent before the numbers do.
 | Eye size | 12–15% of head width, depth ≤ 0.08 |
 | Beak / snout depth | 25–35% of head depth |
 | Slab thickness | 0.10–0.15 units; never thinner |
+
+## NPC Silhouette Guidelines
+
+For richer NPCs, push one or more of these silhouette hooks:
+
+- top-heavy shape: hat, hair, horns, hood, crown, ears, antennae
+- mid-body read: coat flare, apron, armor chest, sash, backpack, scarf
+- arm/hand prop: lantern, staff, briefcase, flag, bouquet, shield, tray
+- lower-body read: boots, robe hem, tail, skirt block, layered trousers
+
+If asked for decorative world characters, keep them non-interactive in spirit but visually expressive in form.
 
 ## Example: Chicken
 

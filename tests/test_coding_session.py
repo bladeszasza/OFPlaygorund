@@ -10,6 +10,12 @@ from ofp_playground.floor.coding_session import (
     DEFAULT_CODING_AGENT_TIMEOUT_SECONDS,
     _build_workspace_snapshot,
     _extract_and_save_code_blocks,
+    _render_required_context_files,
+)
+from ofp_playground.floor.sandbox_context import (
+    BROWSER_MEMORY_RELATIVE_PATH,
+    SESSION_MEMORY_RELATIVE_PATH,
+    sync_sandbox_context,
 )
 from ofp_playground.floor.coding_session_tools import (
     TodoList,
@@ -20,6 +26,8 @@ from ofp_playground.floor.coding_session_tools import (
     tool_use_to_coding_session_directive,
     _safe_resolve,
 )
+from ofp_playground.memory.artifact_store import ArtifactStore
+from ofp_playground.memory.store import MemoryStore
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +275,10 @@ class TestToolSchemas:
         tools = build_coding_session_tool(settings)
         assert len(tools) == 1
         assert tools[0]["name"] == "create_coding_session"
+        topic_schema = tools[0]["input_schema"]["properties"]["topic"]
+        assert topic_schema["maxLength"] == 500
+        assert "artifact_refs" in tools[0]["input_schema"]["properties"]
+        assert "context_files" in tools[0]["input_schema"]["properties"]
         # Check providers enum includes available ones
         providers = tools[0]["input_schema"]["properties"]["agents"]["items"]["properties"]["provider"]["enum"]
         assert "anthropic" in providers
@@ -322,6 +334,20 @@ class TestDirectiveConverter:
         })
         assert "-timeout 1200" in result
 
+    def test_with_context_refs(self):
+        result = tool_use_to_coding_session_directive({
+            "topic": "Build the runtime skeleton",
+            "artifact_refs": ["geom-builder", "game-architect"],
+            "context_files": ["memory/browser-sandbox-delivery.md", "textures_data.js"],
+            "agents": [
+                {"name": "DevAlpha", "provider": "openai", "system": "@development/threejs-developer"},
+            ],
+        })
+        assert "[CODING_CONTEXT artifact=geom-builder]" in result
+        assert "[CODING_CONTEXT artifact=game-architect]" in result
+        assert "[CODING_CONTEXT file=memory/browser-sandbox-delivery.md]" in result
+        assert "[CODING_CONTEXT file=textures_data.js]" in result
+
 
 class TestCodingAgentSpecParsing:
     def test_create_breakout_agent_applies_timeout_override(self):
@@ -357,10 +383,12 @@ class TestCodingSessionManager:
             policy=FloorPolicy.ROUND_ROBIN,
             parent_conversation_id="conv:parent",
             sandbox_dir=tmp_path,
+            required_context_files=("phases/03_geom-builder.md",),
         )
         assert mgr.conversation_id.startswith("coding:")
         assert mgr.speaker_uri == CODING_FM_URI
         assert mgr.sandbox_dir == tmp_path
+        assert mgr.required_context_files == ("phases/03_geom-builder.md",)
 
     def test_register_agent(self, tmp_path):
         bus = MessageBus()
@@ -373,6 +401,17 @@ class TestCodingSessionManager:
         mgr.register_agent("tag:test:coder-1", "Dev1")
         assert "tag:test:coder-1" in mgr._agents
         assert mgr._agents["tag:test:coder-1"] == "Dev1"
+
+
+class TestRequiredContextRendering:
+    def test_render_required_context_files(self):
+        rendered = _render_required_context_files((
+            "phases/03_geom-builder.md",
+            "memory/browser-sandbox-delivery.md",
+        ))
+        assert "REQUIRED CONTEXT FILES" in rendered
+        assert "- phases/03_geom-builder.md" in rendered
+        assert "- memory/browser-sandbox-delivery.md" in rendered
 
     def test_default_coding_agent_timeout_constant(self):
         assert DEFAULT_CODING_AGENT_TIMEOUT_SECONDS == 1200.0
@@ -401,6 +440,47 @@ class TestWorkspaceSnapshot:
         assert "main.js" in snapshot
         assert "[x] 0" in snapshot
         assert "1/2 done" in snapshot
+
+    def test_includes_mirrored_phase_and_memory_files(self, tmp_path):
+        artifact_store = ArtifactStore(tmp_path / "session")
+        artifact_store.save(agent_name="GeomBuilder", content="body")
+        memory_store = MemoryStore()
+        memory_store.store("tasks", "runner", "Build browser main.js")
+
+        sandbox_dir = tmp_path / "sandbox"
+        sync_sandbox_context(sandbox_dir, artifact_store, memory_store)
+
+        snapshot = _build_workspace_snapshot(sandbox_dir, TodoList())
+        assert "01_geom-builder.md" in snapshot
+        assert "browser-sandbox-delivery.md" in snapshot
+        assert "session-memory.md" in snapshot
+
+
+class TestSandboxContextSync:
+    def test_sync_mirrors_phase_and_memory_files(self, tmp_path):
+        artifact_store = ArtifactStore(tmp_path / "session")
+        artifact_store.save(agent_name="GeomBuilder", content="phase content")
+        memory_store = MemoryStore()
+        memory_store.store("tasks", "runner", "Build browser main.js")
+
+        sandbox_dir = tmp_path / "sandbox"
+        context = sync_sandbox_context(sandbox_dir, artifact_store, memory_store)
+
+        assert "phases/01_geom-builder.md" in context.phase_files
+        assert BROWSER_MEMORY_RELATIVE_PATH in context.memory_files
+        assert SESSION_MEMORY_RELATIVE_PATH in context.memory_files
+
+        phase_path = sandbox_dir / "phases" / "01_geom-builder.md"
+        assert phase_path.exists()
+        assert "phase: 1" in phase_path.read_text(encoding="utf-8")
+
+        browser_note = sandbox_dir / BROWSER_MEMORY_RELATIVE_PATH
+        assert browser_note.exists()
+        assert "file://" in browser_note.read_text(encoding="utf-8")
+
+        session_memory = sandbox_dir / SESSION_MEMORY_RELATIVE_PATH
+        assert session_memory.exists()
+        assert "Build browser main.js" in session_memory.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

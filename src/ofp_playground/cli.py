@@ -192,10 +192,28 @@ def _resolve_agent_slug(description: str) -> str:
     """
     if not description or not description.startswith("@"):
         return description
+    import re
+
     try:
         from ofp_playground.agents.library import resolve_slug
         return resolve_slug(description)
     except ValueError as exc:
+        # Some orchestrators append extra instructions directly after an
+        # ``@category/agent`` slug (for example ``@development/threejs-developer.
+        # Write files now``). Resolve the leading slug first, then append the
+        # trailing instructions to the resolved SOUL content.
+        match = re.match(r"^(@[\w-]+/[\w-]+)(.*)$", description, re.DOTALL)
+        if match:
+            slug_ref, suffix = match.groups()
+            suffix = suffix.lstrip(" .:\n\t")
+            try:
+                from ofp_playground.agents.library import resolve_slug
+                resolved = resolve_slug(slug_ref)
+            except ValueError:
+                raise click.BadParameter(str(exc)) from exc
+            if suffix:
+                return f"{resolved}\n\nAdditional instructions:\n{suffix}"
+            return resolved
         raise click.BadParameter(str(exc)) from exc
 
 
@@ -1108,6 +1126,7 @@ async def _attach_floor_callbacks(
         policy: "FloorPolicy",
         max_rounds: int,
         agent_specs: list[str],
+        required_context_files: list[str],
     ) -> "tuple[str, object]":
         from ofp_playground.floor.coding_session import (
             run_coding_session,
@@ -1143,6 +1162,7 @@ async def _attach_floor_callbacks(
             parent_conversation_id=floor.conversation_id,
             sandbox_dir=sandbox_dir,
             max_rounds=max_rounds,
+            required_context_files=required_context_files,
             parent_renderer=renderer,
             trace_collector=floor.trace_collector,
         )
