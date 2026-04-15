@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Directory Is
 
-`agents/` is a library of 207 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
+`agents/` is a library of 216 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
 
 The library is loaded by `src/ofp_playground/agents/library.py`. Every `agents/<category>/<agent-name>/SOUL.md` is addressable as `@category/agent-name` without any registration step.
 
@@ -46,14 +46,30 @@ Common section structure seen across the library:
 
 The `development/` category personas embed software methodology (TDD, debugging discipline, verification). Match that level of specificity when writing new development personas.
 
+The 3D/XR personas (`@development/threejs-developer`, `@development/spatial-developer`, `@creative/3d-scene-composer`, `@creative/spatial-experience-designer`) form a cluster for immersive web work. Key conventions they share:
+- `@development/threejs-developer` — WebGL/Three.js engineering rules (dispose everything, draw call budgets, instancing)
+- `@development/spatial-developer` — WebXR Device API specialist (session setup, reference spaces, 72fps non-negotiable)
+- `@creative/3d-scene-composer` — cinematography/lighting director; always specifies concrete values (Kelvin temps, PBR floats)
+- `@creative/spatial-experience-designer` — UX/comfort/presence design; diegetic UI, spatial audio, motion sickness mitigation
+
+When writing new 3D/XR personas, follow the same pattern: non-negotiable rules block at the top, concrete value tables, and per-frame performance budgets.
+
+The blocky/voxel model cluster (`@creative/blocky-character-designer` + `@development/geometry-builder`) works as a two-agent pipeline with a shared vocabulary. The creative agent outputs a parts table (geometry term, W×H×D, position, hex color, notes flags); the dev agent translates that table into a `buildXxx()` Three.js function. The shared vocabulary terms — `box`, `slab`, `plane`, `edge-highlight`, `shared: <part>`, `bilateral` — are defined in both SOULs and must stay in sync if either is updated.
+
+The procedural platformer cluster extends the blocky pipeline into a full game generation system:
+- `@creative/theme-asset-director` — converts `{theme, hero}` into a 9-asset manifest (hero, obstacle-ground, obstacle-aerial, collectible, platform-tile, background-prop, deco-a, deco-b, deco-c) with hex palette; decoratives are atmospheric only
+- `@creative/texture-director` — designs tileable textures in two forms: canvas2D procedural code (file:// safe, always) + DALL-E prompts; outputs `makeXxxTexture()` functions returning `THREE.CanvasTexture`; DALL-E images can be embedded as base64 `data:` URLs (no CORS)
+- `@development/platformer-architect` — produces implementation-ready 2.5D endless runner specs: physics, scroll system, AABB collision, difficulty curve, Web Audio SFX, AND the showcase home screen (rotating hero on pedestal, fade transition, start button)
+- All feed into `examples/example_platformer.sh` which runs 8 phases: ThemeAssetDirector → BlockyCharacterDesigner × 9 → GeometryBuilder → TextureDirector → DALL-E TextureGen → PlatformerArchitect → SceneComposer → coding session (14 rounds)
+
 ## Categories
 
 | Category | Count | Notes |
 |---|---:|---|
 | `marketing` | 28 | Largest category |
-| `development` | 23 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
+| `development` | 27 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
 | `business` | 14 | |
-| `creative` | 19 | |
+| `creative` | 24 | |
 | `finance` | 10 | |
 | `devops` | 10 | |
 | `productivity` | 9 | |
