@@ -163,10 +163,12 @@ Use the world palette from Phase 1. Textures must feel stylized/toon — no phot
 --- PHASE 5: TEXTURE GENERATION ---
 For each prompt from TextureDir, use the image generation capability to generate the texture image. Each image should be 128×128 or 256×256 pixels. Save each image with a descriptive filename (platform_texture.png, ground_texture.png, etc.).
 
-The image agent automatically appends a TEXTURE_BASE64 line to each response in the form:
-  TEXTURE_BASE64 <name>: data:image/png;base64,<full_base64_string>
+The image agent writes the base64 data URL directly into the coding workspace as textures_data.js — it does NOT put the raw base64 in the conversation (a single 128×128 PNG is ~170k tokens as base64 and would crash the context window). The agent response will say "Base64 pre-written to textures_data.js in the coding workspace (key: 'xxx')".
 
-Copy every TEXTURE_BASE64 line verbatim into the manuscript. These will be embedded in main.js by the coding agents using new THREE.TextureLoader().load('data:image/png;base64,...') which is CORS-safe on file://. Do NOT [REJECT] the image agent asking for base64 — it is already in the response.
+Your only job: note the key name(s) from the response and include them in the manuscript, e.g.:
+  Platform tile texture key: '20260415_101150_texturerenderer' → available in textures_data.js
+
+Do NOT [REJECT] the image agent. Do NOT ask for base64 in the conversation. Coding agents will call read_file('textures_data.js') to access the data themselves.
 
 --- PHASE 6: GAME MECHANICS ---
 [ASSIGN GameArchitect]: Design the mechanics spec for a 2.5D three-lane endless runner with theme "${THEME}". The spec must be implementation-ready. Include the SHOWCASE HOME SCREEN specification.
@@ -264,7 +266,7 @@ PERFORMANCE RULES for coding agents (relay verbatim):
 - HERO Z = 0 ALWAYS. Only obstacles and tiles move in +Z. If hero.position.z is ever modified, the code is wrong.
 - SHOWCASE HOME SCREEN: game opens in 'showcase' state with hero rotating on a pedestal. Implement buildShowcase() that adds hero + pedestal + showcase lights. On SPACE/button click: fadeOut() → clear showcase → startGame(). On game-over: after 1.5s delay, fadeOut() → rebuild showcase.
 - DECORATIVES (deco-a/b/c): spawn these alongside obstacles but NEVER add them to the obstacles array. They scroll with the world in +Z but have no hitbox. deco-b rotates slowly (Y axis). deco-c is placed far back (Z -25 to -35) and stays fixed or scrolls very slowly.
-- TEXTURES: use canvas2D texture functions from TextureDir as the primary texture source. Apply via MeshToonMaterial({ map: makeXxxTexture(), flatShading: true }). If base64 texture strings are provided in the manuscript, embed them as: const tex = new THREE.TextureLoader().load('data:image/png;base64,...') — data: URLs are CORS-safe on file://.
+- TEXTURES: canvas2D functions from TextureDir are the primary source. If the manuscript lists texture keys for textures_data.js, call read_file('textures_data.js') at the start of your turn, then use: const tex = new THREE.TextureLoader().load(TEXTURES['key']) — data: URLs are CORS-safe on file://. Fall back to canvas2D if the file is absent.
 
 SESSION DISCIPLINE for coding agents (relay verbatim):
 - DevAlpha's main.js from Phase 8 is already in the workspace. READ it before writing anything.

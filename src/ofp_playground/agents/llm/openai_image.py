@@ -24,6 +24,57 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("ofp-images")
 DEFAULT_MODEL = "gpt-image-1"
+
+
+def write_texture_sidecar(image_path: Path, mime: str) -> str:
+    """Encode *image_path* as a base64 data URL and append it to the
+    ``textures_data.js`` file inside the sibling ``sandbox/`` directory.
+
+    Returns a short description string suitable for appending to an agent
+    utterance.  Never raises — failures are logged and an empty string is
+    returned so callers can proceed without the sidecar.
+
+    The sandbox directory is derived as ``image_path.parent.parent / "sandbox"``
+    which matches the session layout::
+
+        result/<session>/
+            images/   ← image_path.parent  (_output_dir for image agents)
+            sandbox/  ← image_path.parent.parent / "sandbox"
+    """
+    try:
+        b64 = base64.b64encode(image_path.read_bytes()).decode()
+        data_url = f"data:{mime};base64,{b64}"
+        sandbox_dir = image_path.parent.parent / "sandbox"
+        sandbox_dir.mkdir(parents=True, exist_ok=True)
+        sidecar = sandbox_dir / "textures_data.js"
+        existing = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+        key = image_path.stem
+        if "const TEXTURES" not in existing:
+            existing = (
+                "// Auto-generated texture data URLs — written by image agents\n"
+                "// Usage: new THREE.TextureLoader().load(TEXTURES['<key>'])\n"
+                "const TEXTURES = {};\n"
+            )
+        entry = f"TEXTURES['{key}'] = '{data_url}';\n"
+        if f"TEXTURES['{key}']" in existing:
+            import re as _re
+            existing = _re.sub(
+                rf"TEXTURES\['{re.escape(key)}'\] = '[^']*';",
+                entry.rstrip(),
+                existing,
+            )
+        else:
+            existing += entry
+        sidecar.write_text(existing, encoding="utf-8")
+        return (
+            f"\nBase64 pre-written to `textures_data.js` in the coding workspace "
+            f"(key: '{key}'). "
+            f"Coding agents: read_file('textures_data.js') then "
+            f"new THREE.TextureLoader().load(TEXTURES['{key}'])"
+        )
+    except Exception as _err:
+        logger.warning("Could not write textures_data.js for %s: %s", image_path, _err)
+        return ""
 IMAGE_URI_TEMPLATE = "tag:ofp-playground.local,2025:image-{name}"
 DEFAULT_VISION_MODEL = "gpt-4o-mini"
 VISION_URI_TEMPLATE = "tag:ofp-playground.local,2025:vision-{name}"
@@ -207,19 +258,45 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 if path:
                     mime = _sniff_mime(path)
                     text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
-                    # Append base64 data URL so the Showrunner can embed the
-                    # texture in the manuscript for coding agents.  data: URLs
-                    # are CORS-safe on file:// so coding agents can use them
-                    # directly with THREE.TextureLoader.load().
+                    # Write base64 data URL into the coding workspace as a
+                    # pre-seeded JS file.  The Showrunner should NOT include
+                    # the raw base64 in the conversation — doing so blows the
+                    # context window.  Instead coding agents call
+                    # read_file('textures_data.js') to load the data.
                     try:
                         b64 = base64.b64encode(path.read_bytes()).decode()
                         data_url = f"data:{mime};base64,{b64}"
+                        # Sandbox is the sibling directory of images/
+                        sandbox_dir = self._output_dir.parent / "sandbox"
+                        sandbox_dir.mkdir(parents=True, exist_ok=True)
+                        sidecar = sandbox_dir / "textures_data.js"
+                        # Append/update the JS constant map so multiple texture
+                        # calls accumulate into one file.
+                        existing = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+                        key = path.stem  # e.g. "20260415_101150_texturerenderer"
+                        if "const TEXTURES" not in existing:
+                            existing = "// Auto-generated texture data URLs\n// Usage: new THREE.TextureLoader().load(TEXTURES['<key>'])\nconst TEXTURES = {};\n"
+                        # Insert or overwrite this key
+                        entry = f"TEXTURES['{key}'] = '{data_url}';\n"
+                        if f"TEXTURES['{key}']" in existing:
+                            import re as _re
+                            existing = _re.sub(
+                                rf"TEXTURES\['{key}'\] = '[^']*';",
+                                entry.rstrip(),
+                                existing,
+                            )
+                        else:
+                            existing += entry
+                        sidecar.write_text(existing, encoding="utf-8")
                         text_desc += (
-                            f"\nTEXTURE_BASE64 {path.stem}: {data_url}"
+                            f"\nBase64 pre-written to `textures_data.js` in the "
+                            f"coding workspace (key: '{key}'). "
+                            f"Coding agents: read_file('textures_data.js') then "
+                            f"new THREE.TextureLoader().load(TEXTURES['{key}'])"
                         )
                     except Exception as _b64_err:
                         logger.warning(
-                            "[%s] Could not encode image as base64: %s",
+                            "[%s] Could not write textures_data.js: %s",
                             self._name, _b64_err,
                         )
                     await self.send_envelope(
