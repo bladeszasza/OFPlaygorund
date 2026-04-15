@@ -29,6 +29,7 @@ from ofp_playground.bus.message_bus import MessageBus, FLOOR_MANAGER_URI
 from ofp_playground.config.output import SessionOutputManager
 from ofp_playground.floor.history import ConversationHistory
 from ofp_playground.floor.policy import FloorController, FloorPolicy
+from ofp_playground.memory.artifact_store import ArtifactStore
 from ofp_playground.memory.store import MemoryStore
 from ofp_playground.models.artifact import Utterance
 from ofp_playground.renderer.terminal import TerminalRenderer
@@ -108,6 +109,7 @@ class FloorManager:
         self._last_accepted_text: str = ""  # snapshot of just-[ACCEPT]ed text for truncation recovery
         self._manifests: dict[str, "Manifest"] = {}  # speakerUri → Manifest
         self._memory_store: MemoryStore = MemoryStore()  # ephemeral session memory
+        self._artifact_store: ArtifactStore = ArtifactStore(self._output.root)  # phase artifact files
 
     @property
     def speaker_uri(self) -> str:
@@ -715,19 +717,17 @@ class FloorManager:
                     self._last_orchestrator_directive_text = line
                     # Flush any stale queue entries from agents that saw the orchestrator utterance
                     self._policy._request_queue.clear()
-                    # Build directive, injecting manuscript context for local LLM agents only.
+                    # Build directive, injecting phase artifact index for local LLM agents.
                     # Remote agents receive the raw task — they don't maintain narrative context
                     # and echoing the full manuscript confuses their endpoint logic.
                     directive = f"[DIRECTIVE for {target_name}]: {task}"
                     is_remote = "remote-" in target_uri
-                    if self._manuscript and not is_remote:
-                        manuscript_text = "\n\n".join(self._manuscript)
-                        directive += (
-                            f"\n\n--- STORY SO FAR ({sum(len(c.split()) for c in self._manuscript)} words) ---\n"
-                            f"{manuscript_text}\n"
-                            f"--- END OF STORY SO FAR ---\n"
-                            f"Continue directly from where the story left off."
-                        )
+                    # Inject compact artifact index instead of the full manuscript.
+                    # Agents can use read_artifact(slug) to pull specific phase
+                    # outputs on demand, keeping directive size bounded.
+                    artifact_index = self._artifact_store.get_index()
+                    if artifact_index and not is_remote:
+                        directive += f"\n\n{artifact_index}"
                     if not self._memory_store.is_empty() and not is_remote:
                         memory_summary = self._memory_store.get_summary(max_chars=600)
                         directive += f"\n\n--- SESSION MEMORY ---\n{memory_summary}\n---"
@@ -814,6 +814,11 @@ class FloorManager:
                 if self._last_worker_text:
                     self._last_accepted_text = self._last_worker_text
                     self._manuscript.append(self._last_worker_text)
+                    # Save as phase artifact for interlinked memory access
+                    self._artifact_store.save(
+                        agent_name=self._last_worker_name or "unknown",
+                        content=self._last_worker_text,
+                    )
                     self._last_worker_text = ""
                 if self._renderer:
                     word_count = sum(len(chunk.split()) for chunk in self._manuscript)

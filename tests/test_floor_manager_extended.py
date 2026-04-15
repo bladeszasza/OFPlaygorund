@@ -91,6 +91,22 @@ class TestTaskCompleteDirective:
         await fm._handle_orchestrator_directives("[TASK_COMPLETE]")
         assert not fm._running
 
+    @pytest.mark.asyncio
+    async def test_embedded_task_complete_does_not_stop(self):
+        """[TASK_COMPLETE] mentioned inside planning text must NOT stop the manager."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._running = True  # simulate run() having been called
+        planning_text = (
+            "[ASSIGN Writer]: Write chapter 1\n"
+            "**Plan:**\n"
+            "1. Write chapter\n"
+            "10. Final: emit [TASK_COMPLETE]\n"
+        )
+        fm._agents["tag:ofp-playground.local,2025:llm-writer"] = "Writer"
+        await fm._handle_orchestrator_directives(planning_text)
+        # Manager must still be running — embedded [TASK_COMPLETE] is not a directive
+        assert fm._running
+
 
 # ---------------------------------------------------------------------------
 # _handle_orchestrator_directives — [KICK]

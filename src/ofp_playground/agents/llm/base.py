@@ -70,6 +70,7 @@ class BaseLLMAgent(BasePlaygroundAgent):
         self._name_registry: dict[str, str] = {}
         self._current_director_instruction: str = ""  # injected into system prompt at generation time
         self._memory_store = None  # set via set_memory_store() when in showrunner_driven mode
+        self._artifact_store = None  # set via set_artifact_store() for phase artifact access
 
     @property
     def task_type(self) -> str:
@@ -120,6 +121,10 @@ class BaseLLMAgent(BasePlaygroundAgent):
     def set_memory_store(self, store) -> None:
         """Attach the shared session MemoryStore (set by FloorManager on agent registration)."""
         self._memory_store = store
+
+    def set_artifact_store(self, store) -> None:
+        """Attach the shared ArtifactStore for phase artifact access."""
+        self._artifact_store = store
 
     def _build_system_prompt(self, participants: list[str]) -> str:
         base = SYSTEM_PROMPT_TEMPLATE.format(

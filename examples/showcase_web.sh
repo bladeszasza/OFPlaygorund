@@ -195,7 +195,7 @@ STEP 1 — STORY BRAINSTORM (once, after STEP 0 is complete)
 ─────────────────────────────────────────────────────────────────
 
 Call create_breakout_session. Policy: sequential. Max rounds: 16.
-Topic: paste Booker's full 4-issue arc structure verbatim.
+Topic: use read_artifact to retrieve Booker's full 4-issue arc structure and include it as the topic.
 
   Agent 1 — name: DragonVoice, provider: hf
     System: You are the pulse of Dragon Ball Z — raw power climbing, the scream before transformation,

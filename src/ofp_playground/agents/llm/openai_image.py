@@ -26,6 +26,28 @@ OUTPUT_DIR = Path("ofp-images")
 DEFAULT_MODEL = "gpt-image-1"
 
 
+def _split_compound_prompt(prompt: str) -> list[str]:
+    """Split a compound prompt containing numbered items into individual sub-prompts.
+
+    Detects patterns like ``(1) ... (2) ...`` or ``1. ... 2. ...`` and splits
+    them into separate prompts.  Returns ``[prompt]`` unchanged if no numbered
+    items are detected.
+    """
+    # Try (1)/(2)/(3) pattern
+    parts = re.split(r"\s*\(\d+\)\s*", prompt)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) >= 2:
+        return parts
+
+    # Try "1. ... 2. ... 3. ..." (must start at word boundary)
+    parts = re.split(r"(?:^|\n)\s*\d+\.\s+", prompt)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) >= 2:
+        return parts
+
+    return [prompt]
+
+
 def write_texture_sidecar(image_path: Path, mime: str) -> str:
     """Encode *image_path* as a base64 data URL and append it to the
     ``textures_data.js`` file inside the sibling ``sandbox/`` directory.
@@ -170,6 +192,9 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                     prompt=prompt,
                     n=1,
                     size="1024x1024",
+                    output_format="jpeg",
+                    output_compression=80,
+                    background="opaque",
                 )
                 if not response.data or not response.data[0].b64_json:
                     raise RuntimeError("OpenAI image generation returned no image data")
@@ -179,7 +204,10 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 response = client.responses.create(
                     model=self._model,
                     input=prompt,
-                    tools=[{"type": "image_generation"}],
+                    tools=[{"type": "image_generation",
+                            "output_format": "jpeg",
+                            "output_compression": 80,
+                            "background": "opaque"}],
                 )
                 image_data = [
                     output.result
@@ -196,7 +224,14 @@ class OpenAIImageAgent(BasePlaygroundAgent):
         try:
             image_bytes = await self._call_with_retry(_coro)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = self._output_dir / f"{ts}_{self._name.lower()}.png"
+            # Detect actual format from magic bytes — API should return
+            # JPEG but may fall back to PNG/WebP in edge cases.
+            ext = "jpg"
+            if image_bytes[:4] == b"\x89PNG":
+                ext = "png"
+            elif len(image_bytes) >= 12 and image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+                ext = "webp"
+            path = self._output_dir / f"{ts}_{self._name.lower()}.{ext}"
             path.write_bytes(image_bytes)
             return path
         except Exception as e:
@@ -253,57 +288,14 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                     )
                     prompt = recovered
             if prompt:
-                logger.info("[%s] Generating OpenAI image: %s", self._name, prompt[:80])
-                path = await self._generate_image(prompt)
-                if path:
-                    mime = _sniff_mime(path)
-                    text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
-                    # Write base64 data URL into the coding workspace as a
-                    # pre-seeded JS file.  The Showrunner should NOT include
-                    # the raw base64 in the conversation — doing so blows the
-                    # context window.  Instead coding agents call
-                    # read_file('textures_data.js') to load the data.
-                    try:
-                        b64 = base64.b64encode(path.read_bytes()).decode()
-                        data_url = f"data:{mime};base64,{b64}"
-                        # Sandbox is the sibling directory of images/
-                        sandbox_dir = self._output_dir.parent / "sandbox"
-                        sandbox_dir.mkdir(parents=True, exist_ok=True)
-                        sidecar = sandbox_dir / "textures_data.js"
-                        # Append/update the JS constant map so multiple texture
-                        # calls accumulate into one file.
-                        existing = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
-                        key = path.stem  # e.g. "20260415_101150_texturerenderer"
-                        if "const TEXTURES" not in existing:
-                            existing = "// Auto-generated texture data URLs\n// Usage: new THREE.TextureLoader().load(TEXTURES['<key>'])\nconst TEXTURES = {};\n"
-                        # Insert or overwrite this key
-                        entry = f"TEXTURES['{key}'] = '{data_url}';\n"
-                        if f"TEXTURES['{key}']" in existing:
-                            import re as _re
-                            existing = _re.sub(
-                                rf"TEXTURES\['{key}'\] = '[^']*';",
-                                entry.rstrip(),
-                                existing,
-                            )
-                        else:
-                            existing += entry
-                        sidecar.write_text(existing, encoding="utf-8")
-                        text_desc += (
-                            f"\nBase64 pre-written to `textures_data.js` in the "
-                            f"coding workspace (key: '{key}'). "
-                            f"Coding agents: read_file('textures_data.js') then "
-                            f"new THREE.TextureLoader().load(TEXTURES['{key}'])"
-                        )
-                    except Exception as _b64_err:
-                        logger.warning(
-                            "[%s] Could not write textures_data.js: %s",
-                            self._name, _b64_err,
-                        )
-                    await self.send_envelope(
-                        self._make_media_utterance_envelope(
-                            text_desc, "image", mime, str(path.resolve())
-                        )
-                    )
+                # Split compound prompts into individual sub-prompts.
+                # Orchestrators sometimes batch multiple image requests
+                # (e.g. "Generate 3 textures: (1) ... (2) ... (3) ...")
+                # but the image API generates one image per call.
+                sub_prompts = _split_compound_prompt(prompt)
+                for sub_prompt in sub_prompts:
+                    logger.info("[%s] Generating OpenAI image: %s", self._name, sub_prompt[:80])
+                    await self._generate_and_deliver(sub_prompt)
         except Exception as e:
             logger.error("[%s] Floor grant error: %s", self._name, e)
         finally:
@@ -312,6 +304,60 @@ class OpenAIImageAgent(BasePlaygroundAgent):
             self._raw_prompt = None
             self._last_directive_text = None
             await self.yield_floor()
+
+    async def _generate_and_deliver(self, prompt: str) -> None:
+        """Generate a single image from *prompt*, save it, write base64 sidecar, and send utterance."""
+        path = await self._generate_image(prompt)
+        if not path:
+            return
+        mime = _sniff_mime(path)
+        text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
+        # Write base64 data URL into the coding workspace as a
+        # pre-seeded JS file.  The Showrunner should NOT include
+        # the raw base64 in the conversation — doing so blows the
+        # context window.  Instead coding agents call
+        # read_file('textures_data.js') to load the data.
+        try:
+            b64 = base64.b64encode(path.read_bytes()).decode()
+            data_url = f"data:{mime};base64,{b64}"
+            # Sandbox is the sibling directory of images/
+            sandbox_dir = self._output_dir.parent / "sandbox"
+            sandbox_dir.mkdir(parents=True, exist_ok=True)
+            sidecar = sandbox_dir / "textures_data.js"
+            # Append/update the JS constant map so multiple texture
+            # calls accumulate into one file.
+            existing = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+            key = path.stem  # e.g. "20260415_101150_texturerenderer"
+            if "const TEXTURES" not in existing:
+                existing = "// Auto-generated texture data URLs\n// Usage: new THREE.TextureLoader().load(TEXTURES['<key>'])\nconst TEXTURES = {};\n"
+            # Insert or overwrite this key
+            entry = f"TEXTURES['{key}'] = '{data_url}';\n"
+            if f"TEXTURES['{key}']" in existing:
+                import re as _re
+                existing = _re.sub(
+                    rf"TEXTURES\['{key}'\] = '[^']*';",
+                    entry.rstrip(),
+                    existing,
+                )
+            else:
+                existing += entry
+            sidecar.write_text(existing, encoding="utf-8")
+            text_desc += (
+                f"\nBase64 pre-written to `textures_data.js` in the "
+                f"coding workspace (key: '{key}'). "
+                f"Coding agents: read_file('textures_data.js') then "
+                f"new THREE.TextureLoader().load(TEXTURES['{key}'])"
+            )
+        except Exception as _b64_err:
+            logger.warning(
+                "[%s] Could not write textures_data.js: %s",
+                self._name, _b64_err,
+            )
+        await self.send_envelope(
+            self._make_media_utterance_envelope(
+                text_desc, "image", mime, str(path.resolve())
+            )
+        )
 
     async def _dispatch(self, envelope: Envelope) -> None:
         for event in (envelope.events or []):

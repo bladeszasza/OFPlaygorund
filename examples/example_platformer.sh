@@ -5,20 +5,20 @@
 # Agent roster (9 total):
 #
 #   Orchestrator:
-#   - anthropic:orchestrator        → Showrunner        (claude-opus-4-6)
+#   - anthropic:orchestrator        → Showrunner        (claude-haiku-4-5)
 #
 #   Design pipeline:
 #   - openai:text-generation        → AssetDirector     (@creative/theme-asset-director)
 #   - openai:text-generation        → CharDesigner      (@creative/blocky-character-designer)
-#   - anthropic:text-generation     → GeomBuilder       (@development/geometry-builder)
+#   - openai:text-generation        → GeomBuilder       (@development/geometry-builder)
 #   - openai:text-generation        → TextureDir        (@creative/texture-director)
 #   - openai:text-to-image          → TextureGen        (generates canvas2D textures)
 #   - openai:text-generation        → GameArchitect     (@development/platformer-architect)
 #   - openai:text-generation        → SceneComposer     (@creative/3d-scene-composer)
 #
 #   Coding session (round-robin, 14 rounds):
-#   - anthropic:code-generation     → DevBeta           (@development/threejs-developer)
-#   - openai:code-generation        → DevAlpha          (@development/geometry-builder)
+#   - anthropic:code-generation     → DevAlpha           (@development/threejs-developer)
+#   - openai:code-generation        → DevBeta          (@development/geometry-builder)
 #
 # Pipeline phases:
 #   1.  AssetDirector  — manifest: 9 assets (hero, 2 obstacles, collectible, tile, bg-prop, deco-a/b/c)
@@ -130,7 +130,7 @@ Assets to design (copy rows verbatim from the AssetDirector manifest):
 - deco-b
 - deco-c
 
-[Paste ALL 9 asset rows from Phase 1 verbatim into this directive.]
+Use read_artifact('asset-manifest') to retrieve the Phase 1 output and include all 9 asset rows in this directive.
 
 --- PHASE 3: GEOMETRY CODE ---
 [ASSIGN GeomBuilder]: You will receive 9 parts tables (one per game asset). For each table, generate a complete buildXxx() function that returns a THREE.Group. All 9 functions must go in a single code block.
@@ -143,7 +143,7 @@ Rules:
 - Function names: buildHero(), buildObstacleGround(), buildObstacleAerial(), buildCollectible(), buildPlatformTile(), buildBackgroundProp(), buildDecoA(), buildDecoB(), buildDecoC()
 - No import/export syntax — these functions will be pasted directly into main.js
 
-[Paste ALL 9 parts tables from Phase 2 into this directive verbatim.]
+Use read_artifact('char-design') to retrieve the Phase 2 output and include all 9 parts tables in this directive.
 
 --- PHASE 4: TEXTURE DESIGN ---
 [ASSIGN TextureDir]: Design canvas2D procedural textures for the "${THEME}" theme. The platform tile and ground surface both need tileable textures. The hero surface may benefit from a subtle pattern.
@@ -161,12 +161,18 @@ Required surfaces:
 Use the world palette from Phase 1. Textures must feel stylized/toon — no photorealism.
 
 --- PHASE 5: TEXTURE GENERATION ---
-For each prompt from TextureDir, use the image generation capability to generate the texture image. Each image should be 128×128 or 256×256 pixels. Save each image with a descriptive filename (platform_texture.png, ground_texture.png, etc.).
+For each texture prompt from TextureDir, issue a SEPARATE [ASSIGN TextureGen] with exactly ONE prompt per assignment. The image agent generates ONE image per call — it CANNOT batch.
 
-The image agent writes the base64 data URL directly into the coding workspace as textures_data.js — it does NOT put the raw base64 in the conversation (a single 128×128 PNG is ~170k tokens as base64 and would crash the context window). The agent response will say "Base64 pre-written to textures_data.js in the coding workspace (key: 'xxx')".
+Example sequence:
+  [ASSIGN TextureGen]: Generate this texture — PROMPT: <paste TextureDir's first gpt-image prompt verbatim>
+  (wait for response, [ACCEPT])
+  [ASSIGN TextureGen]: Generate this texture — PROMPT: <paste TextureDir's second gpt-image prompt verbatim>
+  (wait for response, [ACCEPT])
+  ... repeat for each texture ...
 
-Your only job: note the key name(s) from the response and include them in the manuscript, e.g.:
-  Platform tile texture key: '20260415_101150_texturerenderer' → available in textures_data.js
+Each image should be 128×128 or 256×256 pixels. The image agent writes the base64 data URL directly into the coding workspace as textures_data.js — it does NOT put the raw base64 in the conversation. The agent response will say "Base64 pre-written to textures_data.js in the coding workspace (key: 'xxx')".
+
+Your only job: note the key name(s) from each response and include them in the phase artifacts.
 
 Do NOT [REJECT] the image agent. Do NOT ask for base64 in the conversation. Coding agents will call read_file('textures_data.js') to access the data themselves.
 
@@ -215,10 +221,10 @@ ONE ATMOSPHERIC DETAIL:
 A theme-specific visual touch implemented in Three.js (e.g., slow-rotating skybox element, particle drift, background parallax layer). Specify exactly how to implement it.
 
 --- PHASE 8: INITIAL BUILD ---
-[ASSIGN DevAlpha]: You are the lead Three.js developer. Build the COMPLETE playable game from the manuscript below.
+[ASSIGN DevAlpha]: You are the lead Three.js developer. Build the COMPLETE playable game using the phase artifacts.
 
 Deliver a single main.js file with all of the following:
-1. All 9 buildXxx() geometry functions from the manuscript (verbatim, no changes)
+1. All 9 buildXxx() geometry functions from Phase 3 (verbatim, no changes)
 2. Canvas2D texture functions from TextureDir, applied via MeshToonMaterial({ map: makeXxxTexture(), flatShading: true })
 3. Complete game loop: renderer setup, scene, camera, fog, lighting, input, physics, spawner, collision, scoring, HUD
 4. All 4 obstacle patterns (A/B/C/D) with correct unlock timing
@@ -233,19 +239,16 @@ HARD CONSTRAINTS (any violation makes the game unplayable):
 - HERO Z = 0 always. Only obstacles and tiles move in +Z.
 - Showcase hero: position.y = PHYSICS.playerGroundY (= 0). Aerial obstacles: Y = 1.8 always.
 
-[Paste the COMPLETE manuscript here — all phases 1–7 output verbatim.]
+Use read_artifact to retrieve the key phase outputs. Include the geometry code (Phase 3), texture specs (Phase 4), mechanics (Phase 6), and atmosphere (Phase 7) specifications in this directive. Do NOT paste all phases verbatim — include only the implementation-critical specs.
 
 --- PHASE 9: CODING SESSION (refinement) ---
 After DevAlpha delivers main.js, use the create_coding_session tool to launch a refinement session.
 
-Pass the ENTIRE manuscript as the topic. Do NOT summarize.
-
-Tool call parameters:
-  topic: [PASTE COMPLETE MANUSCRIPT HERE]
+Use read_artifact to compose a focused topic brief. Include the geometry code (Phase 3), texture specs (Phase 4), mechanics (Phase 6), and atmosphere (Phase 7) in the topic. Omit design-phase narrative — coding agents need only implementation specs.
   policy: round_robin
   max_rounds: 6
   agents:
-    - name: DevAlpha,  provider: anthropic, model: claude-sonnet-4-6,      system: @development/threejs-developer
+    - name: DevAlpha,  provider: openai,    model: gpt-5.4-2026-03-05,      system: @development/threejs-developer
     - name: DevBeta,   provider: openai,    model: gpt-5.4-2026-03-05, system: @development/geometry-builder
 
 TARGET PROJECT STRUCTURE (file://-safe runtime):
@@ -266,7 +269,7 @@ PERFORMANCE RULES for coding agents (relay verbatim):
 - HERO Z = 0 ALWAYS. Only obstacles and tiles move in +Z. If hero.position.z is ever modified, the code is wrong.
 - SHOWCASE HOME SCREEN: game opens in 'showcase' state with hero rotating on a pedestal. Implement buildShowcase() that adds hero + pedestal + showcase lights. On SPACE/button click: fadeOut() → clear showcase → startGame(). On game-over: after 1.5s delay, fadeOut() → rebuild showcase.
 - DECORATIVES (deco-a/b/c): spawn these alongside obstacles but NEVER add them to the obstacles array. They scroll with the world in +Z but have no hitbox. deco-b rotates slowly (Y axis). deco-c is placed far back (Z -25 to -35) and stays fixed or scrolls very slowly.
-- TEXTURES: canvas2D functions from TextureDir are the primary source. If the manuscript lists texture keys for textures_data.js, call read_file('textures_data.js') at the start of your turn, then use: const tex = new THREE.TextureLoader().load(TEXTURES['key']) — data: URLs are CORS-safe on file://. Fall back to canvas2D if the file is absent.
+- TEXTURES: canvas2D functions from TextureDir are the primary source. If the phase artifacts list texture keys for textures_data.js, call read_file('textures_data.js') at the start of your turn, then use: const tex = new THREE.TextureLoader().load(TEXTURES['key']) — data: URLs are CORS-safe on file://. Fall back to canvas2D if the file is absent.
 
 SESSION DISCIPLINE for coding agents (relay verbatim):
 - DevAlpha's main.js from Phase 8 is already in the workspace. READ it before writing anything.
@@ -291,10 +294,10 @@ ofp-playground start \
   --agent "-provider anthropic -type orchestrator -name Showrunner -system ${SHOWRUNNER}" \
   --agent "-provider openai -name AssetDirector -system @creative/theme-asset-director -model gpt-5.4-2026-03-05" \
   --agent "-provider openai -name CharDesigner -system @creative/blocky-character-designer -model gpt-5.4-2026-03-05" \
-  --agent "-provider anthropic -name GeomBuilder -system @development/geometry-builder -model claude-sonnet-4-6" \
+  --agent "-provider openai -name GeomBuilder -system @development/geometry-builder -model gpt-5.4-2026-03-05" \
   --agent "-provider openai -name TextureDir -system @creative/texture-director -model gpt-5.4-2026-03-05" \
   --agent "-provider openai -type text-to-image -name TextureGen" \
   --agent "-provider openai -name GameArchitect -system @development/platformer-architect -model gpt-5.4-2026-03-05" \
   --agent "-provider openai -name SceneComposer -system @creative/3d-scene-composer -model gpt-5.4-2026-03-05" \
-  --agent "anthropic:code-generation:DevBeta:@development/threejs-developer:claude-sonnet-4-6" \
-  --agent "openai:code-generation:DevAlpha:@development/geometry-builder:gpt-5.4-2026-03-05"
+  --agent "anthropic:code-generation:DevAlpha:@development/threejs-developer:claude-sonnet-4-6" \
+  --agent "openai:code-generation:DevBeta:@development/geometry-builder:gpt-5.4-2026-03-05"

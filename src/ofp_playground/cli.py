@@ -957,6 +957,9 @@ async def _spawn_llm_agent(
         # Give all agents access to the shared session memory store
         if hasattr(agent, "set_memory_store"):
             agent.set_memory_store(floor._memory_store)
+        # Give all agents access to the shared phase artifact store
+        if hasattr(agent, "set_artifact_store"):
+            agent.set_artifact_store(floor._artifact_store)
         floor.register_agent(agent.speaker_uri, agent.name)
         registry.register(agent)
         model_name = model_override or getattr(agent, "_model", "default")

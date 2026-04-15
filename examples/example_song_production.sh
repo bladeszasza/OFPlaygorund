@@ -156,7 +156,7 @@ Step 6b — After CoverArtist responds, immediately assign:
 --- PHASE 7: WEBSITE ---
 [ASSIGN WebDev]: Build a complete single-page HTML website for this song.
 
-The manuscript above contains all the song data. Extract from it:
+The phase artifacts contain all the song data. Use read_artifact to retrieve from them:
 - Song title (from SongConcepter's TITLE)
 - Song story/concept (from SongConcepter's STORY and THEMES)
 - Complete lyrics (from Lyricist's output, all sections with labels)

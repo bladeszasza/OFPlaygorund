@@ -345,12 +345,19 @@ class _OrchestratorBase:
         if memory_store and not memory_store.is_empty():
             summary = memory_store.get_summary(max_chars=1500)
             memory_section = f"\n\n--- SESSION MEMORY ---\n{summary}\n---"
+        # Inject phase artifact index so the orchestrator knows what's been completed
+        artifact_store = getattr(self, "_artifact_store", None)
+        artifact_section = ""
+        if artifact_store:
+            index = artifact_store.get_index()
+            if index:
+                artifact_section = f"\n\n{index}"
         return TOOL_ORCHESTRATOR_SYSTEM_PROMPT.format(
             name=self._name,
             agent_list=self._build_agent_list(),
             mission=self._mission,
             memory_section=memory_section,
-        )
+        ) + artifact_section
 
     async def _handle_utterance(self, envelope: "Envelope") -> None:
         """Record worker output into context. Never request floor — FloorManager grants it reactively."""
@@ -376,6 +383,52 @@ class _OrchestratorBase:
             return
         sender_name = self._name_registry.get(sender_uri) or _uri_to_name(sender_uri)
         self._append_to_context(sender_name, text, is_self=False)
+        # Condense older history entries to keep context bounded.
+        # Keep the 4 most recent messages fresh; condense anything older
+        # that exceeds ~2000 chars (roughly 500 tokens).
+        self._condense_old_history()
+
+    def _condense_old_history(self, keep_recent: int = 4, threshold: int = 2000) -> None:
+        """Replace long older history entries with compact artifact references.
+
+        Entries within the *keep_recent* tail are left untouched so the orchestrator
+        can evaluate the current exchange fully.  Older entries above *threshold*
+        chars are condensed to a one-line reference pointing to the phase artifact.
+        """
+        history = self._conversation_history
+        if len(history) <= keep_recent:
+            return
+        artifact_store = getattr(self, "_artifact_store", None)
+        boundary = len(history) - keep_recent
+        for idx in range(boundary):
+            entry = history[idx]
+            content = entry.get("content", "")
+            if len(content) <= threshold:
+                continue
+            # Extract speaker name from "Speaker: content" format
+            speaker = ""
+            if entry["role"] == "user" and ": " in content[:80]:
+                speaker, _ = content.split(": ", 1)
+            # Try to find matching artifact for a compact reference
+            if artifact_store and artifact_store.phase_count > 0:
+                # Find artifact by speaker name
+                matched = None
+                for art in artifact_store.all_artifacts():
+                    if speaker and art.agent_name.lower() == speaker.lower():
+                        matched = art
+                        break
+                if matched:
+                    condensed = (
+                        f"{speaker}: [Phase {matched.phase_num} output — "
+                        f"{matched.summary} — use read_artifact('{matched.slug}') for full content]"
+                    )
+                    history[idx] = {"role": entry["role"], "content": condensed}
+                    continue
+            # Fallback: truncate with marker
+            preview = content[:400]
+            word_count = len(content.split())
+            condensed = f"{preview}... [{word_count} words total — condensed; use read_artifact to retrieve full content]"
+            history[idx] = {"role": entry["role"], "content": condensed}
 
     async def _handle_grant_floor(self) -> None:
         """Floor granted by FloorManager — issue next directive based on current context."""
@@ -386,7 +439,8 @@ class _OrchestratorBase:
                 self._append_to_context(self._name, response, is_self=True)
                 await self.send_envelope(self._make_utterance_envelope(response))
                 self._consecutive_errors = 0
-                if "[TASK_COMPLETE]" in response:
+                import re as _re
+                if _re.search(r"^\[TASK_COMPLETE\]", response, _re.MULTILINE | _re.IGNORECASE):
                     if self._stop_callback:
                         self._stop_callback()
         except Exception as e:
@@ -574,6 +628,7 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
         loop = asyncio.get_event_loop()
         from ofp_playground.agents.llm.spawn_tools import build_spawn_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
+        from ofp_playground.memory.artifact_tools import build_artifact_tools, execute_artifact_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
         from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
@@ -586,9 +641,11 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
         spawn_tools = build_spawn_tools(self._settings) if self._settings else []
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
+        artifact_store = getattr(self, "_artifact_store", None)
+        art_tools = build_artifact_tools() if artifact_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
         coding_tools = build_coding_session_tool(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
+        all_tools = spawn_tools + mem_tools + art_tools + breakout_tools + coding_tools
 
         kwargs: dict = {
             "model": self._model,
@@ -617,6 +674,9 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
                     result = execute_memory_tool(block.name, block.input, memory_store, self._name)
                     if block.name == "recall_memory":
                         recall_blocks.append((block, result))
+                elif block.name in ("read_artifact", "list_artifacts") and artifact_store:
+                    result = execute_artifact_tool(block.name, block.input, artifact_store)
+                    recall_blocks.append((block, result))
                 elif block.name == "create_breakout_session":
                     directive = tool_use_to_breakout_directive(block.input)
                     if directive:
@@ -655,6 +715,8 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
                 elif block.type == "tool_use":
                     if block.name in ("store_memory", "recall_memory") and memory_store:
                         execute_memory_tool(block.name, block.input, memory_store, self._name)
+                    elif block.name in ("read_artifact", "list_artifacts") and artifact_store:
+                        execute_artifact_tool(block.name, block.input, artifact_store)
                     elif block.name == "create_breakout_session":
                         directive = tool_use_to_breakout_directive(block.input)
                         if directive:
@@ -705,6 +767,7 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
         loop = asyncio.get_event_loop()
         from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_openai_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
+        from ofp_playground.memory.artifact_tools import build_artifact_tools, execute_artifact_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
         from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
@@ -717,9 +780,11 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
         spawn_tools = build_spawn_tools(self._settings) if self._settings else []
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
+        artifact_store = getattr(self, "_artifact_store", None)
+        art_tools = build_artifact_tools() if artifact_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
         coding_tools = build_coding_session_tool(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
+        all_tools = spawn_tools + mem_tools + art_tools + breakout_tools + coding_tools
         openai_tools = to_openai_tools(all_tools) if all_tools else None
 
         def _call(inp):
@@ -747,6 +812,9 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
                     result = execute_memory_tool(item.name, args, memory_store, self._name)
                     if item.name == "recall_memory":
                         recall_items.append((item, result))
+                elif item.name in ("read_artifact", "list_artifacts") and artifact_store:
+                    result = execute_artifact_tool(item.name, args, artifact_store)
+                    recall_items.append((item, result))
                 elif item.name == "create_breakout_session":
                     directive = tool_use_to_breakout_directive(args)
                     if directive:
@@ -831,6 +899,7 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
         from google.genai import types
         from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_google_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
+        from ofp_playground.memory.artifact_tools import build_artifact_tools, execute_artifact_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
         from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
@@ -850,9 +919,11 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
         spawn_tools = build_spawn_tools(self._settings) if self._settings else []
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
+        artifact_store = getattr(self, "_artifact_store", None)
+        art_tools = build_artifact_tools() if artifact_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
         coding_tools = build_coding_session_tool(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
+        all_tools = spawn_tools + mem_tools + art_tools + breakout_tools + coding_tools
         google_tools = to_google_tools(all_tools) if all_tools else None
 
         def _call(cts):
@@ -888,6 +959,9 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
                         result = execute_memory_tool(fc.name, args, memory_store, self._name)
                         if fc.name == "recall_memory":
                             recall_results.append((fc.name, result))
+                    elif fc.name in ("read_artifact", "list_artifacts") and artifact_store:
+                        result = execute_artifact_tool(fc.name, args, artifact_store)
+                        recall_results.append((fc.name, result))
                     elif fc.name == "create_breakout_session":
                         directive = tool_use_to_breakout_directive(args)
                         if directive:

@@ -78,8 +78,9 @@ def build_coding_session_tool(settings: "Settings") -> list[dict]:
                         "description": (
                             "Project description, requirements, and spec for the "
                             "coding session. Be detailed — this is the brief that "
-                            "all coding agents will work from. Include the full "
-                            "manuscript or spec text."
+                            "all coding agents will work from. Use read_artifact "
+                            "to retrieve key phase outputs and compose a focused "
+                            "spec — include implementation-critical details only."
                         ),
                     },
                     "policy": {
