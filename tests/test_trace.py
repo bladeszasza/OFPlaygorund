@@ -62,6 +62,9 @@ async def test_message_bus_collects_broadcast_event() -> None:
     assert "Receiver" in e.route_names
     assert "Floor Manager" in e.route_names
     assert "hello world" in e.summary
+    assert e.scope_kind == "main"
+    assert e.scope_id == "conv:test"
+    assert e.parent_conversation_id is None
 
 
 @pytest.mark.asyncio
@@ -90,16 +93,69 @@ async def test_message_bus_collects_private_event() -> None:
     assert e.is_broadcast is False
     assert e.directive == "ASSIGN"
     assert e.route_uris == [FLOOR_MANAGER_URI, "tag:test:receiver"]
+    assert e.scope_kind == "main"
+    assert e.scope_id == "conv:test"
+
+
+@pytest.mark.asyncio
+async def test_message_bus_collects_nested_scope_metadata() -> None:
+    bus = MessageBus()
+    collector = EventCollector("conv:test")
+    collector.register_agent("tag:test:sender", "Sender")
+    collector.register_agent(FLOOR_MANAGER_URI, "Floor Manager")
+    bus.set_collector(
+        collector,
+        breakout_id="coding:demo",
+        scope_id="coding:demo",
+        scope_kind="coding",
+        parent_conversation_id="conv:test",
+    )
+
+    sender_q = asyncio.Queue()
+    fm_q = asyncio.Queue()
+
+    await bus.register("tag:test:sender", sender_q)
+    await bus.register(FLOOR_MANAGER_URI, fm_q)
+
+    env = _utterance_envelope("tag:test:sender", "nested hello", conv_id="coding:demo")
+    await bus.send(env)
+
+    assert len(collector.events) == 1
+    e = collector.events[0]
+    assert e.conversation_id == "coding:demo"
+    assert e.breakout_id == "coding:demo"
+    assert e.scope_id == "coding:demo"
+    assert e.scope_kind == "coding"
+    assert e.parent_conversation_id == "conv:test"
 
 
 def test_render_trace_html(tmp_path) -> None:
     collector = EventCollector("conv:test")
     collector.register_agent(FLOOR_MANAGER_URI, "Floor Manager")
     collector.register_agent("tag:test:sender", "Sender")
+    collector.register_agent("tag:test:builder", "Builder")
     collector.record(
         envelope=_utterance_envelope("tag:test:sender", "render me"),
         recipients={FLOOR_MANAGER_URI},
         is_private=False,
+    )
+    collector.record(
+        envelope=_utterance_envelope("tag:test:builder", "breakout event", conv_id="breakout:demo"),
+        recipients={FLOOR_MANAGER_URI},
+        is_private=False,
+        breakout_id="breakout:demo",
+        scope_id="breakout:demo",
+        scope_kind="breakout",
+        parent_conversation_id="conv:test",
+    )
+    collector.record(
+        envelope=_utterance_envelope("tag:test:builder", "coding event", conv_id="coding:demo"),
+        recipients={FLOOR_MANAGER_URI},
+        is_private=False,
+        breakout_id="coding:demo",
+        scope_id="coding:demo",
+        scope_kind="coding",
+        parent_conversation_id="conv:test",
     )
 
     out = tmp_path / "trace.html"
@@ -109,3 +165,8 @@ def test_render_trace_html(tmp_path) -> None:
     assert "OFP Conversation Trace" in text
     assert "TRACE_DATA" in text
     assert "render me" in text
+    assert "Nested Sessions" in text
+    assert "Coding Session" in text
+    assert "Breakout" in text
+    assert '"scope_kind": "coding"' in text
+    assert '"scope_kind": "breakout"' in text

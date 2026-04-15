@@ -100,6 +100,7 @@ class FloorManager:
         self._orchestrator_idle_grants: int = 0  # consecutive floor grants with no productive action
         self._skip_next_orchestrator_yield: bool = False  # absorb stale yieldFloor after breakout re-grant
         self._breakout_callback: Optional[callable] = None  # set externally for breakout sessions
+        self._coding_session_callback: Optional[callable] = None  # set externally for coding sessions
         self._pending_breakout_file = None  # Path to last breakout artifact — injected into next ASSIGN
         self._manuscript: list[str] = []  # accumulated accepted chunks (showrunner_driven)
         self._last_worker_text: str = ""  # most recent non-orchestrator utterance text
@@ -587,6 +588,8 @@ class FloorManager:
             [SPAWN -provider hf -name X -system Y -model Z]
             [BREAKOUT policy=<p> max_rounds=<n> topic=<t>]
             [BREAKOUT_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
+            [CODING_SESSION policy=<p> max_rounds=<n> topic=<t>]
+            [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
             [TASK_COMPLETE]
         """
         import re
@@ -597,6 +600,8 @@ class FloorManager:
         assigned_in_batch = False  # guard: only one [ASSIGN] per directive batch
         breakout_header: Optional[dict] = None  # parsed from [BREAKOUT ...]
         breakout_agent_specs: list[str] = []    # raw specs from [BREAKOUT_AGENT ...]
+        coding_session_header: Optional[dict] = None  # parsed from [CODING_SESSION ...]
+        coding_agent_specs: list[str] = []             # raw specs from [CODING_AGENT ...]
 
         # Collapse multi-line [BREAKOUT ...] and [BREAKOUT_AGENT ...] blocks into
         # single lines so the line-by-line parser below can handle them.
@@ -611,6 +616,19 @@ class FloorManager:
         text = re.sub(
             r'\[BREAKOUT_AGENT\b(.*?)\]',
             lambda m: '[BREAKOUT_AGENT ' + ' '.join(m.group(1).split()) + ']',
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Same collapsing for [CODING_SESSION ...] and [CODING_AGENT ...] blocks.
+        text = re.sub(
+            r'\[CODING_SESSION (?!COMPLETE\b)(.*?)\]',
+            lambda m: '[CODING_SESSION ' + ' '.join(m.group(1).split()) + ']',
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        text = re.sub(
+            r'\[CODING_AGENT\b(.*?)\]',
+            lambda m: '[CODING_AGENT ' + ' '.join(m.group(1).split()) + ']',
             text,
             flags=re.DOTALL | re.IGNORECASE,
         )
@@ -641,6 +659,26 @@ class FloorManager:
             m = re.match(r"\[BREAKOUT_AGENT\s+(.+?)\]", line, re.IGNORECASE)
             if m:
                 breakout_agent_specs.append(m.group(1).strip())
+                continue
+
+            # [CODING_SESSION policy=<p> max_rounds=<n> topic=<t>]
+            m = re.match(r"\[CODING_SESSION\s+(.+?)\]", line, re.IGNORECASE)
+            if m and not re.match(r"\[CODING_SESSION\s*COMPLETE", line, re.IGNORECASE):
+                spec = m.group(1).strip()
+                policy_m = re.search(r"policy=(\S+)", spec)
+                rounds_m = re.search(r"max_rounds=(\d+)", spec)
+                topic_m = re.search(r"topic=(.+)", spec)
+                coding_session_header = {
+                    "policy": policy_m.group(1) if policy_m else "round_robin",
+                    "max_rounds": int(rounds_m.group(1)) if rounds_m else 16,
+                    "topic": topic_m.group(1).strip() if topic_m else "Coding session",
+                }
+                continue
+
+            # [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
+            m = re.match(r"\[CODING_AGENT\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                coding_agent_specs.append(m.group(1).strip())
                 continue
 
             # [ASSIGN AgentName]: task  — set assigned agent, clear stale queue, grant floor
@@ -889,6 +927,10 @@ class FloorManager:
         if breakout_header and breakout_agent_specs:
             await self._execute_breakout(breakout_header, breakout_agent_specs)
 
+        # Execute coding session if one was requested
+        if coding_session_header and coding_agent_specs:
+            await self._execute_coding_session(coding_session_header, coding_agent_specs)
+
     @staticmethod
     def _breakout_topic_keywords(topic: str) -> set[str]:
         """Extract normalised keywords from a breakout topic string."""
@@ -1008,6 +1050,70 @@ class FloorManager:
         if self._renderer:
             self._renderer.show_system_event(
                 "[Orchestrator] Breakout completed — summary injected"
+            )
+
+    async def _execute_coding_session(self, header: dict, agent_specs: list[str]) -> None:
+        """Spawn coding agents, run a coding session, inject result.
+
+        After the session completes, the project manifest is sent to the
+        orchestrator and the floor is returned.
+        """
+        topic = header["topic"]
+        policy_str = header["policy"]
+        max_rounds = min(max(header["max_rounds"], 2), 50)
+
+        try:
+            policy = FloorPolicy(policy_str)
+        except ValueError:
+            policy = FloorPolicy.ROUND_ROBIN
+            logger.warning("Invalid coding session policy '%s', defaulting to round_robin", policy_str)
+
+        if policy == FloorPolicy.SHOWRUNNER_DRIVEN:
+            policy = FloorPolicy.ROUND_ROBIN
+            logger.warning("SHOWRUNNER_DRIVEN not allowed in coding session, using round_robin")
+
+        if not self._coding_session_callback:
+            logger.warning("Orchestrator [CODING_SESSION]: no coding_session_callback registered")
+            if self._renderer:
+                self._renderer.show_system_event("[Orchestrator] Coding session failed: no callback registered")
+            return
+
+        try:
+            callback_result = await self._coding_session_callback(topic, policy, max_rounds, agent_specs)
+        except Exception as e:
+            logger.error("Orchestrator [CODING_SESSION] failed: %s", e, exc_info=True)
+            callback_result = f"[Coding session: {topic[:60]}] — failed: {e}"
+            if self._renderer:
+                self._renderer.show_system_event(f"[Orchestrator] Coding session failed: {e}")
+
+        if isinstance(callback_result, tuple):
+            compact_text, artifact_path = callback_result
+            self._pending_breakout_file = artifact_path  # reuse injection mechanism
+        else:
+            compact_text = callback_result
+
+        # Record in session memory
+        from ofp_playground.memory.store import MemoryCategory
+        summary_preview = (compact_text or "")[:200]
+        self._memory_store.store(
+            category=MemoryCategory.TASKS,
+            key=f"coding_session:{topic[:40]}",
+            content=f"Completed. {summary_preview}",
+            author="system",
+        )
+
+        self._assigned_uri = None
+
+        await self._send_directed_utterance(
+            f"[CODING SESSION COMPLETE]\n{compact_text}",
+            target_uri=self._orchestrator_uri,
+        )
+        self._skip_next_orchestrator_yield = True
+        await self.grant_to(self._orchestrator_uri)
+
+        if self._renderer:
+            self._renderer.show_system_event(
+                "[Orchestrator] Coding session completed — project files ready"
             )
 
     def _parse_worker_memory(self, text: str, author: str) -> str:

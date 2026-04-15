@@ -216,10 +216,11 @@ You will receive the conversation topic on your first turn. On every subsequent 
 
 To add a new specialist, call one of the spawn_* tools — each tool requires an initial_task so the agent gets work the moment it joins. Do not write [SPAWN ...] text yourself.
 
-MEMORY TOOLS: Use store_memory and recall_memory to track session knowledge.
-- store_memory: Record key decisions, agent performance notes, task status, lessons, and goal refinements.
-- recall_memory: Retrieve specific memories by category or key when you need more detail.
-- The full memory summary is auto-injected below each turn — you rarely need recall_memory explicitly.
+MEMORY TOOLS: Use store_memory only when there is project-specific information that would be lost without it.
+- GOOD uses: a creative decision that isn't in the manuscript (e.g. palette choice, a constraint a worker surfaced, an unexpected requirement), agent capability notes ("TextureDir cannot do base64 — use canvas only").
+- BAD uses: recording that a phase completed (the conversation history already shows this), generic task status, reflexive "logging" after every ACCEPT.
+- recall_memory: only needed when you suspect a key fact was stored earlier and isn't in recent context.
+- The full memory summary is auto-injected below each turn — you rarely need either tool explicitly.
 - Workers can write memories using [REMEMBER category]: content in their output text.
 
 BREAKOUT SESSIONS: Use create_breakout_session to spin up a temporary sub-floor.
@@ -431,9 +432,10 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
         import asyncio
         import json
         loop = asyncio.get_event_loop()
-        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_hf_tools, tool_use_to_directives
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_hf_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
+        from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
         system = self._build_system_prompt([])
         messages = [{"role": "system", "content": system}] + list(self._conversation_history)
@@ -450,7 +452,8 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools
+        coding_tools = build_coding_session_tool(self._settings) if self._settings else []
+        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
         hf_tools = to_hf_tools(all_tools) if all_tools else None
 
         def _call(msgs):
@@ -484,6 +487,10 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
                     # store_memory: fire-and-forget, result logged but not fed back
                 elif name == "create_breakout_session":
                     directive = tool_use_to_breakout_directive(args)
+                    if directive:
+                        spawn_directives.append(directive)
+                elif name == "create_coding_session":
+                    directive = tool_use_to_coding_session_directive(args)
                     if directive:
                         spawn_directives.append(directive)
                 else:
@@ -565,9 +572,10 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
     async def _generate_response(self, participants: list[str]) -> Optional[str]:
         import asyncio
         loop = asyncio.get_event_loop()
-        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, tool_use_to_directives
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
+        from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
         client = self._get_client()
         system = self._build_system_prompt([])
@@ -579,7 +587,8 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools
+        coding_tools = build_coding_session_tool(self._settings) if self._settings else []
+        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
 
         kwargs: dict = {
             "model": self._model,
@@ -610,6 +619,10 @@ class AnthropicOrchestratorAgent(_OrchestratorBase, AnthropicAgent):
                         recall_blocks.append((block, result))
                 elif block.name == "create_breakout_session":
                     directive = tool_use_to_breakout_directive(block.input)
+                    if directive:
+                        spawn_directives.append(directive)
+                elif block.name == "create_coding_session":
+                    directive = tool_use_to_coding_session_directive(block.input)
                     if directive:
                         spawn_directives.append(directive)
                 else:
@@ -690,9 +703,10 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
         import asyncio
         import json
         loop = asyncio.get_event_loop()
-        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_openai_tools, tool_use_to_directives
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_openai_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
+        from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
         client = self._get_client()
         system = self._build_system_prompt([])
@@ -704,7 +718,8 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools
+        coding_tools = build_coding_session_tool(self._settings) if self._settings else []
+        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
         openai_tools = to_openai_tools(all_tools) if all_tools else None
 
         def _call(inp):
@@ -734,6 +749,10 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
                         recall_items.append((item, result))
                 elif item.name == "create_breakout_session":
                     directive = tool_use_to_breakout_directive(args)
+                    if directive:
+                        spawn_directives.append(directive)
+                elif item.name == "create_coding_session":
+                    directive = tool_use_to_coding_session_directive(args)
                     if directive:
                         spawn_directives.append(directive)
                 else:
@@ -810,9 +829,10 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
         loop = asyncio.get_event_loop()
         from google import genai
         from google.genai import types
-        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_google_tools, tool_use_to_directives
+        from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_google_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
         from ofp_playground.floor.breakout_tools import build_breakout_tools, tool_use_to_breakout_directive
+        from ofp_playground.floor.coding_session_tools import build_coding_session_tool, tool_use_to_coding_session_directive
 
         system = self._build_system_prompt([])
         history = list(self._conversation_history)
@@ -831,7 +851,8 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
         memory_store = getattr(self, "_memory_store", None)
         mem_tools = build_memory_tools() if memory_store else []
         breakout_tools = build_breakout_tools(self._settings) if self._settings else []
-        all_tools = spawn_tools + mem_tools + breakout_tools
+        coding_tools = build_coding_session_tool(self._settings) if self._settings else []
+        all_tools = spawn_tools + mem_tools + breakout_tools + coding_tools
         google_tools = to_google_tools(all_tools) if all_tools else None
 
         def _call(cts):
@@ -869,6 +890,10 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
                             recall_results.append((fc.name, result))
                     elif fc.name == "create_breakout_session":
                         directive = tool_use_to_breakout_directive(args)
+                        if directive:
+                            spawn_directives.append(directive)
+                    elif fc.name == "create_coding_session":
+                        directive = tool_use_to_coding_session_directive(args)
                         if directive:
                             spawn_directives.append(directive)
                     else:

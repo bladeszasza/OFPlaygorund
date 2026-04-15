@@ -121,7 +121,6 @@ def _envelope_to_chat_messages(
                 break
 
         role = "user" if is_human else "assistant"
-        title = f"{icon} {sender_name}"
         # Embed colour hint in title so CSS can target it
         title_with_color = f'<span style="color:{color};font-weight:700">{icon} {sender_name}</span>'
 

@@ -370,7 +370,13 @@ async def run_breakout_session(
     )
     if trace_collector is not None:
         # Tag breakout events so they can render as nested branches in the main timeline.
-        breakout_bus.set_collector(trace_collector, breakout_id=breakout_fm.conversation_id)
+        breakout_bus.set_collector(
+            trace_collector,
+            breakout_id=breakout_fm.conversation_id,
+            scope_id=breakout_fm.conversation_id,
+            scope_kind="breakout",
+            parent_conversation_id=parent_conversation_id,
+        )
 
     if parent_renderer:
         agent_names = ", ".join(a.name for a in agents)

@@ -205,8 +205,23 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 logger.info("[%s] Generating OpenAI image: %s", self._name, prompt[:80])
                 path = await self._generate_image(prompt)
                 if path:
-                    text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
                     mime = _sniff_mime(path)
+                    text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
+                    # Append base64 data URL so the Showrunner can embed the
+                    # texture in the manuscript for coding agents.  data: URLs
+                    # are CORS-safe on file:// so coding agents can use them
+                    # directly with THREE.TextureLoader.load().
+                    try:
+                        b64 = base64.b64encode(path.read_bytes()).decode()
+                        data_url = f"data:{mime};base64,{b64}"
+                        text_desc += (
+                            f"\nTEXTURE_BASE64 {path.stem}: {data_url}"
+                        )
+                    except Exception as _b64_err:
+                        logger.warning(
+                            "[%s] Could not encode image as base64: %s",
+                            self._name, _b64_err,
+                        )
                     await self.send_envelope(
                         self._make_media_utterance_envelope(
                             text_desc, "image", mime, str(path.resolve())

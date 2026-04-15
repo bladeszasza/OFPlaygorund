@@ -45,12 +45,30 @@ class EventCollector:
         recipients: set[str],
         is_private: bool,
         breakout_id: str | None = None,
+        *,
+        scope_id: str | None = None,
+        scope_kind: str | None = None,
+        parent_conversation_id: str | None = None,
     ) -> None:
         sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
         sender_name = self._name_for(sender_uri)
         envelope_json = envelope.to_json(indent=2)
         route_uris = sorted(recipients)
         route_names = [self._name_for(uri) for uri in route_uris]
+        conversation_id = envelope.conversation.id if envelope.conversation else self._conversation_id
+        resolved_scope_id = self._resolve_scope_id(
+            conversation_id=conversation_id,
+            breakout_id=breakout_id,
+            scope_id=scope_id,
+        )
+        resolved_scope_kind = scope_kind or self._infer_scope_kind(resolved_scope_id)
+        if resolved_scope_kind == "main":
+            resolved_scope_id = self._conversation_id
+            resolved_parent_conversation_id = None
+            legacy_breakout_id = None
+        else:
+            resolved_parent_conversation_id = parent_conversation_id or self._conversation_id
+            legacy_breakout_id = breakout_id or resolved_scope_id
 
         for event in (envelope.events or []):
             event_type = getattr(event, "eventType", type(event).__name__)
@@ -67,8 +85,11 @@ class EventCollector:
                     index=len(self._events),
                     timestamp=time.monotonic(),
                     wall_time=time.time(),
-                    conversation_id=envelope.conversation.id if envelope.conversation else self._conversation_id,
-                    breakout_id=breakout_id,
+                    conversation_id=conversation_id,
+                    breakout_id=legacy_breakout_id,
+                    scope_id=resolved_scope_id,
+                    scope_kind=resolved_scope_kind,
+                    parent_conversation_id=resolved_parent_conversation_id,
                     event_type=event_type,
                     sender_uri=sender_uri,
                     sender_name=sender_name,
@@ -104,6 +125,30 @@ class EventCollector:
         if uri in self._agent_names:
             return self._agent_names[uri]
         return uri.split(":")[-1] if ":" in uri else uri
+
+    def _resolve_scope_id(
+        self,
+        *,
+        conversation_id: str,
+        breakout_id: str | None,
+        scope_id: str | None,
+    ) -> str:
+        if scope_id:
+            return scope_id
+        if breakout_id:
+            return breakout_id
+        if conversation_id != self._conversation_id and self._infer_scope_kind(conversation_id) != "main":
+            return conversation_id
+        return self._conversation_id
+
+    def _infer_scope_kind(self, scope_id: str | None) -> str:
+        if not scope_id or scope_id == self._conversation_id:
+            return "main"
+        if scope_id.startswith("breakout:"):
+            return "breakout"
+        if scope_id.startswith("coding:"):
+            return "coding"
+        return "nested"
 
     def _extract_summary(self, event_type: str, event) -> tuple[str, str | None]:
         reason = getattr(event, "reason", None)

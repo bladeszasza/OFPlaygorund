@@ -196,7 +196,6 @@ class BaseTextPerceptionAgent(BasePlaygroundAgent):
             result = await loop.run_in_executor(None, _protected_call, text)
             return self._format_result(result)
         except Exception as e:
-            short = str(e).split("\n")[0][:200]
             logger.error("[%s] Inference error: %s", self._name, e)
             return ""
 

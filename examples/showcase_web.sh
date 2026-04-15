@@ -499,7 +499,7 @@ STRICT RULES:
 # ─────────────────────────────────────────────
 
 ofp-playground web \
-  --human-name cs \
+  --human-name Tobby \
   --policy showrunner_driven \
   --max-turns 200 \
   --agent "hf:orchestrator:Director:${DIRECTOR_MISSION}:moonshotai/Kimi-K2.5" \

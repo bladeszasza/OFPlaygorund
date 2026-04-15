@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ofp_playground.bus.message_bus import MessageBus
 
 from .perception_base import BaseTextPerceptionAgent
 

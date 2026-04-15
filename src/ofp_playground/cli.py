@@ -86,7 +86,7 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
 
     if spec.startswith("-"):
         # Flag-based format: find each -flag and collect its value up to the next -flag
-        flag_re = re.compile(r"-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
+        flag_re = re.compile(r"(?<!\w)-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
         matches = list(flag_re.finditer(spec))
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
@@ -1089,6 +1089,69 @@ async def _attach_floor_callbacks(
         return compact, artifact_path
 
     floor._breakout_callback = _floor_breakout_callback
+
+    _coding_session_count = 0
+
+    async def _floor_coding_session_callback(
+        topic: str,
+        policy: "FloorPolicy",
+        max_rounds: int,
+        agent_specs: list[str],
+    ) -> "tuple[str, object]":
+        from ofp_playground.floor.coding_session import (
+            run_coding_session,
+            save_coding_session_artifact,
+            build_coding_session_notification,
+        )
+
+        nonlocal _coding_session_count
+
+        agents = []
+        temp_bus = MessageBus()
+
+        for spec_str in agent_specs:
+            try:
+                agent = _create_breakout_agent(spec_str, temp_bus, "coding-temp", settings)
+                if agent:
+                    agents.append(agent)
+            except Exception as e:
+                logger.error("Coding session agent creation failed for '%s': %s", spec_str, e)
+                _notify(f"Coding session agent failed: {e}")
+
+        if len(agents) < 1:
+            msg = f"[Coding session: {topic[:60]}] — could not create enough agents ({len(agents)}/1 minimum)."
+            return msg, None
+
+        # Use the session sandbox directory for shared file workspace
+        sandbox_dir = floor.output.sandbox
+
+        result = await run_coding_session(
+            topic=topic,
+            agents=agents,
+            policy=policy,
+            parent_conversation_id=floor.conversation_id,
+            sandbox_dir=sandbox_dir,
+            max_rounds=max_rounds,
+            parent_renderer=renderer,
+            trace_collector=floor.trace_collector,
+        )
+
+        artifact_path = save_coding_session_artifact(result, floor.output.breakout)
+        _notify(f"[CodingSession] Artifact: {artifact_path} | {len(result.files)} files in {sandbox_dir}")
+
+        _coding_session_count += 1
+        if floor._memory_store:
+            floor._memory_store.store(
+                "tasks",
+                f"coding_session_{_coding_session_count}",
+                f"'{result.topic[:60]}' | {result.round_count} rounds | "
+                f"{', '.join(result.agent_names)} | {len(result.files)} files → {sandbox_dir}",
+            )
+
+        compact = build_coding_session_notification(result, artifact_path, _coding_session_count)
+        return compact, artifact_path
+
+    floor._coding_session_callback = _floor_coding_session_callback
 
 
 @click.group()

@@ -43,24 +43,42 @@
 
 set -e
 
-TOPIC="${1:-Chord progression: C — F — C — F — Am — G — F — G (C major key). \
-C and F are the pulse — street-level, locked-in, the groove that walks itself. \
-Am is the shadow side: not sadness but knowing — the cost of living fully. \
-G is the coil before the release, muscle memory tensing before the next drop into C. \
-The loop breathes like a city block at 3am. Circular. Inevitable. Never quite resolved. \
-Genre: funky punk rock — worn-in, not performed. Like finding a rhythm in concrete. \
-Tempo: mid-tempo 106 BPM, the unhurried swagger of someone who has already been through it. \
-Duration target: ~3 minutes. \
-Bass is the backbone — fingerstyle funk bass drives the entire track, popping and sliding between root notes, \
-locking with the kick drum on every C and F, never overplaying but impossible to ignore. \
-The guitar rides on top of the bass, not the other way around. \
-Snare hits hard on 2 and 4 — sharp, dry, no ring. The snare is the spine of the whole thing. \
-Lyrical theme: skating and friendship — the specific language of people who grew up together on the same block. \
-Not metaphor. Actual tricks. Actual falls. Actual friends calling your name across a parking lot. \
-The bond between people who show up for each other without making a big deal out of it. \
-C→F is momentum — pushing off, finding your feet, trusting your body. \
-Am is the bail, the blood on the knee, the sitting on the curb moment — but your friend is already walking over. \
-G→C is getting back up because they are watching and you would do the same for them.}"
+TOPIC="${1:-Chord progression structured across three sections:
+
+VERSE: Cm — Ab — Cm — Ab — Fm — Ab — Cm
+(Use extended voicings like Cm9 and AbMaj7 to capture the atmospheric piano-bass interaction)
+
+CHORUS: Ab — Fm — Cm — Bb
+(Descending hook — this is the harmonic spine of the whole song)
+
+BRIDGE: Eb — Db — Fm — Ab
+(Brighter lift before dropping back into the minor groove)
+
+The Cm→Ab motion is momentum, trusting your body.
+Fm is the blood on the knee, the sitting on the curb moment.
+Bb→Cm is getting back up — because it ain't about how hard you fall, it's about how you get back up.
+Bb is the coil before the release, muscle memory tensing before the next drop into Cm.
+The hook is the slap bass, present and repeating in the loop. Snare is on the fourth beat. Inevitable.
+
+Genre: Funk Rock and Alternative Rock
+Tempo: 92-93 BPM
+Key: C Minor
+Danceability: Approximately 60%
+Duration target: ~3 minutes.
+
+Bass is the backbone — Flea-style slap and pop on the C minor pentatonic scale drives the entire track,
+locking with the kick drum on every Cm and Ab, never overplaying but impossible to ignore.
+The guitar rides on top of the bass, not the other way around. Delayed, ambient textures rather than heavy strumming.
+Piano carries the steady quarter-note pulse — Cm9 and AbMaj7 voicings for atmosphere.
+Snare hits hard on 2 and 4 — sharp, dry, no ring. The snare is the spine of the whole thing.
+
+Driving funk-rock groove with high-kinetic energy. Aggressive slap bass
+snapping against a tight, dry drum kit, soaring underneath a liquid, overdriven electric guitar melody.
+
+Lyrical theme: dark necessities — the things that bond the human body to habits like weed or skating,
+which shape and determine who you are, yet the freedom those so-called bad habits return to you
+is exactly what makes them necessary.
+}"
 
 
 echo "Starting Song Production Pipeline"
@@ -165,13 +183,13 @@ ofp-playground start \
   --policy showrunner_driven \
   --no-human \
   --topic "$TOPIC" \
-  --agent "google:orchestrator:Showrunner:${SHOWRUNNER}:gemini-3.1-pro-preview" \
+  --agent "anthropic:orchestrator:Showrunner:${SHOWRUNNER}" \
   --agent "hf:text-generation:UXResearcher:@creative/ux-researcher" \
   --agent "google:text-generation:SongConcepter:You are a creative music director and song architect. You think about songs as emotional experiences with a beginning, middle, and end. You develop complete song concepts: title, emotional story arc, thematic imagery, section-by-section structure with purpose, instrument selection with rationale, tempo, key, and intended listener impact. Be specific and evocative — name instruments precisely, describe emotions concretely, think about how every sonic choice serves the story." \
   --agent "google:text-generation:Lyricist:You are a professional lyricist and poet. You write songs with emotional depth, vivid imagery, and memorable hooks. You understand song structure deeply and how to serve a song's emotional arc with words. You use internal rhyme, slant rhyme, and concrete specificity. You never use clichés — you find the unexpected, true image. Output lyrics with clear section labels on their own lines: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Verse 2], [Bridge], [Outro].:gemini-3.1-pro-preview" \
   --agent "hf:text-generation:MusicProducer:@creative/music-producer" \
-  --agent "google:text-generation:LyriaComposer:@creative/lyria-composer" \
+  --agent "google:text-generation:LyriaComposer:@creative/lyria-composer:gemini-3.1-pro-preview" \
   --agent "google:text-to-music:MusicGen::lyria-3-pro-preview" \
   --agent "google:text-generation:CoverArtist:@creative/impressionist-painter" \
-  --agent "google:text-to-image:ImageGen:You are a professional image generation specialist. When assigned an image prompt, generate the image exactly as described. Do not alter, summarize, or interpret the prompt — render it precisely." \
+  --agent "google:text-to-image:ImageGen:You are a professional image generation specialist. When assigned an image prompt, generate the image exactly as described. Do not alter, summarize, or interpret the prompt — render it precisely.:gemini-3-pro-image-preview" \
   --agent "google:code-generation:WebDev:You are an expert web developer specializing in music and media web experiences. When assigned, create a complete single-page HTML website. Use Tailwind CSS via CDN for styling. Design for dark atmospheric music aesthetics. Output the complete HTML as a single self-contained file wrapped in a markdown code block.:gemini-3.1-pro-preview"

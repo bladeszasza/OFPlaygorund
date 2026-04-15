@@ -317,7 +317,6 @@ class BaseLLMAgent(BasePlaygroundAgent):
             self._running = False
 
     async def _dispatch(self, envelope: Envelope) -> None:
-        sender_uri = self._get_sender_uri(envelope)
         for event in (envelope.events or []):
             event_type = getattr(event, "eventType", type(event).__name__)
             if event_type == "utterance":

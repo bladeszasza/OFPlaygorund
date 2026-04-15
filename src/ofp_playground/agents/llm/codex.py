@@ -20,14 +20,56 @@ OUTPUT_DIR = Path("ofp-code")
 DEFAULT_MODEL_OPENAI = "gpt-5.4-long-context"
 CODE_INTERPRETER_CONTAINER = {"type": "auto"}
 
+# ── Shared code-block extraction ────────────────────────────────────────────
+
+_CODE_BLOCK_RE = re.compile(r"```(\w+)?\n(.*?)```", re.DOTALL)
+
+_EXT_MAP = {
+    "html": ".html",
+    "python": ".py", "py": ".py",
+    "javascript": ".js", "js": ".js",
+    "typescript": ".ts", "ts": ".ts",
+    "css": ".css",
+    "sql": ".sql",
+    "bash": ".sh", "sh": ".sh",
+    "json": ".json",
+    "xml": ".xml",
+    "yaml": ".yaml", "yml": ".yml",
+    "jsx": ".jsx", "tsx": ".tsx",
+    "glsl": ".glsl",
+    "markdown": ".md", "md": ".md",
+}
+
+
+def save_code_blocks(text: str, output_dir: Path, agent_name: str) -> list[Path]:
+    """Extract fenced code blocks from *text* and write each to *output_dir*."""
+    saved: list[Path] = []
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    slug = re.sub(r"[^\w]+", "_", agent_name.lower())
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for i, m in enumerate(_CODE_BLOCK_RE.finditer(text)):
+        lang = (m.group(1) or "").lower().strip()
+        code = m.group(2).strip()
+        if not code:
+            continue
+        ext = _EXT_MAP.get(lang, ".txt")
+        suffix = f"_{i + 1}" if i > 0 else ""
+        path = output_dir / f"{ts}_{slug}{suffix}{ext}"
+        path.write_text(code, encoding="utf-8")
+        saved.append(path)
+    return saved
+
 
 class BaseCodingAgent(BaseLLMAgent, abc.ABC):
     """Abstract base for all coding agents.
 
     Shared: directive parsing, _send_progress, _send_final_and_yield,
-            _build_context, output dir, task defaults, SOUL loading.
+            _build_context, output dir, task defaults, SOUL loading,
+            file-tool infrastructure (schemas + sandboxed executor).
     Abstract: _run_code_loop(context) -> tuple[str, list[Path]]
     """
+
+    _FILE_TOOL_NAMES = frozenset({"list_workspace", "read_file", "write_file", "edit_file"})
 
     def __init__(
         self,
@@ -129,6 +171,17 @@ class BaseCodingAgent(BaseLLMAgent, abc.ABC):
         )
         return any(marker in directive for marker in disable_markers)
 
+    def _file_tool_schemas(self) -> list[dict]:
+        """Return Anthropic-format tool schemas for local file I/O."""
+        from ofp_playground.floor.coding_session_tools import build_file_tools
+        return [t for t in build_file_tools() if t["name"] in self._FILE_TOOL_NAMES]
+
+    def _execute_file_tool(self, name: str, args: dict) -> str:
+        """Execute a file tool against self._output_dir (sandboxed)."""
+        from ofp_playground.floor.coding_session_tools import TodoList, execute_coding_tool
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        return execute_coding_tool(name, args, self._output_dir, TodoList())
+
     async def _handle_grant_floor(self) -> None:
         self._has_floor = True
         try:
@@ -187,24 +240,42 @@ class OpenAICodingAgent(BaseCodingAgent):
         )
 
     async def _run_code_loop(self, context: str) -> tuple[str, list[Path]]:
+        import json as json_mod
+
         from openai import AsyncOpenAI
+
         tools_disabled = self._tools_disabled_for_directive()
         if tools_disabled:
             await self._send_progress("Directive requested text-only mode (tools disabled).")
 
-        async def _stream_once() -> tuple[str, list[tuple[str, str]]]:
+        # Build combined tool list: code_interpreter + file tools
+        _tools_list: list[dict] = []
+        if not tools_disabled:
+            _tools_list.append({"type": "code_interpreter", "container": CODE_INTERPRETER_CONTAINER})
+            for t in self._file_tool_schemas():
+                _tools_list.append({
+                    "type": "function",
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                })
+
+        async def _stream_once() -> tuple[str, list[tuple[str, str]], str | None, list]:
+            """Stream request. Returns (text, file_ids, response_id, function_calls)."""
             client = AsyncOpenAI(api_key=self._api_key)
             local_output_text = ""
             local_file_ids: list[tuple[str, str]] = []
-            request_kwargs = {
+            local_fn_calls: list = []
+            response_id: str | None = None
+            request_kwargs: dict = {
                 "model": self._model,
                 "instructions": self._synopsis,
                 "input": context,
                 "reasoning": {"effort": "high"},
                 "max_output_tokens": 32000,
             }
-            if not tools_disabled:
-                request_kwargs["tools"] = [{"type": "code_interpreter", "container": CODE_INTERPRETER_CONTAINER}]  # type: ignore[assignment]
+            if _tools_list:
+                request_kwargs["tools"] = _tools_list  # type: ignore[assignment]
             try:
                 async with client.responses.stream(**request_kwargs) as stream:  # type: ignore[call-overload]
                     async for event in stream:
@@ -224,23 +295,69 @@ class OpenAICodingAgent(BaseCodingAgent):
                                         if logs:
                                             await self._send_progress(f"Output: {logs[:120]}")
                     final = await stream.get_final_response()
+                    response_id = getattr(final, "id", None)
                     for item in (final.output or []):
                         if getattr(item, "type", "") == "message":
                             for part in (getattr(item, "content", None) or []):
                                 if getattr(part, "type", "") == "output_text":
                                     local_output_text += getattr(part, "text", "")
+                        elif getattr(item, "type", "") == "function_call":
+                            local_fn_calls.append(item)
             finally:
                 await client.close()
-            return local_output_text, local_file_ids
+            return local_output_text, local_file_ids, response_id, local_fn_calls
 
         try:
-            output_text, file_ids = await _stream_once()
+            output_text, file_ids, resp_id, fn_calls = await _stream_once()
         except Exception as e:
             if tools_disabled or not self._is_tool_configuration_error(e):
                 raise
             await self._send_progress("Tool mode unavailable, retrying without tools.")
             tools_disabled = True
-            output_text, file_ids = await _stream_once()
+            _tools_list.clear()
+            output_text, file_ids, resp_id, fn_calls = await _stream_once()
+
+        # Handle file-tool function calls (multi-turn loop)
+        if not tools_disabled and resp_id:
+            for _round in range(25):
+                file_calls = [
+                    fc for fc in fn_calls
+                    if getattr(fc, "name", "") in self._FILE_TOOL_NAMES
+                ]
+                if not file_calls:
+                    break
+
+                fn_outputs: list[dict] = []
+                for fc in file_calls:
+                    raw = getattr(fc, "arguments", "{}")
+                    args = json_mod.loads(raw) if isinstance(raw, str) else (raw or {})
+                    result = self._execute_file_tool(fc.name, args)
+                    await self._send_progress(f"[{fc.name}] {result[:80]}")
+                    fn_outputs.append({
+                        "type": "function_call_output",
+                        "call_id": fc.call_id,
+                        "output": result,
+                    })
+
+                cont_client = AsyncOpenAI(api_key=self._api_key)
+                try:
+                    cont_resp = await cont_client.responses.create(
+                        model=self._model,
+                        previous_response_id=resp_id,
+                        input=fn_outputs,
+                    )
+                finally:
+                    await cont_client.close()
+
+                resp_id = getattr(cont_resp, "id", None)
+                fn_calls = []
+                for item in (cont_resp.output or []):
+                    if getattr(item, "type", "") == "message":
+                        for part in (getattr(item, "content", None) or []):
+                            if getattr(part, "type", "") == "output_text":
+                                output_text += getattr(part, "text", "")
+                    elif getattr(item, "type", "") == "function_call":
+                        fn_calls.append(item)
 
         saved_files: list[Path] = []
         self._output_dir.mkdir(parents=True, exist_ok=True)

@@ -14,6 +14,9 @@ class TraceEvent:
     wall_time: float
     conversation_id: str
     breakout_id: str | None
+    scope_id: str
+    scope_kind: str
+    parent_conversation_id: str | None
     event_type: str
     sender_uri: str
     sender_name: str

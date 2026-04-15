@@ -60,7 +60,7 @@ BasePlaygroundAgent
     ├── DirectorAgent    — narrative director (ROUND_ROBIN); grants turn per agent each round
     ├── PerceptionBase subclasses (classifier, detector, ocr, ner, multimodal)
     ├── ShowrunnerAgent  — orchestrator that drives SHOWRUNNER_DRIVEN policy
-    └── BaseCodingAgent(ABC)  — code generation base; task defaults _timeout=300s, _max_retries=2
+    └── BaseCodingAgent(ABC)  — code generation base; task defaults _timeout=None (unlimited), _max_retries=2
         ├── OpenAICodingAgent   — Responses API + code_interpreter (default: gpt-5.4-long-context)
         ├── AnthropicCodingAgent — code_execution_20250825 beta (default: claude-opus-4-6)
         └── GoogleCodingAgent   — ToolCodeExecution (default: gemini-3-flash-preview)
