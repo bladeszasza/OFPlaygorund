@@ -150,7 +150,6 @@ Ready-made scripts in [`examples/`](examples/):
 | [`showcase.sh`](examples/showcase.sh) | Full illustrated story pipeline — 10 chapters, images, music, HTML (any topic) |
 | [`showcase_web.sh`](examples/showcase_web.sh) | Same pipeline via Gradio web UI |
 | [`example_platformer.sh`](examples/example_platformer.sh) | Procedural Three.js endless runner — 9-phase design + coding pipeline (Anthropic + OpenAI) |
-| [`example_platformer_hf.sh`](examples/example_platformer_hf.sh) | Same platformer pipeline, HuggingFace-only (MiniMax, Kimi-K2.5, DeepSeek-V3.2) |
 | [`example_song_production.sh`](examples/example_song_production.sh) | AI music production pipeline |
 | [`round_robin_novel.sh`](examples/round_robin_novel.sh) | Round-robin collaborative novel |
 | [`sequential_code_review.sh`](examples/sequential_code_review.sh) | Sequential code review pipeline |
