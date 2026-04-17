@@ -148,8 +148,13 @@ Ready-made scripts in [`examples/`](examples/):
 | Script | What it does |
 |---|---|
 | [`showcase.sh`](examples/showcase.sh) | Full illustrated story pipeline — 10 chapters, images, music, HTML (any topic) |
+| [`showcase_web.sh`](examples/showcase_web.sh) | Same pipeline via Gradio web UI |
+| [`example_platformer.sh`](examples/example_platformer.sh) | Procedural Three.js endless runner — 9-phase design + coding pipeline (Anthropic + OpenAI) |
+| [`example_platformer_hf.sh`](examples/example_platformer_hf.sh) | Same platformer pipeline, HuggingFace-only (MiniMax, Kimi-K2.5, DeepSeek-V3.2) |
+| [`example_song_production.sh`](examples/example_song_production.sh) | AI music production pipeline |
 | [`round_robin_novel.sh`](examples/round_robin_novel.sh) | Round-robin collaborative novel |
 | [`sequential_code_review.sh`](examples/sequential_code_review.sh) | Sequential code review pipeline |
+| [`breakout_code_review.sh`](examples/breakout_code_review.sh) | Code review using breakout sessions |
 | [`moderated_investment_committee.sh`](examples/moderated_investment_committee.sh) | Moderated investment committee |
 | [`free_for_all_brainstorm.sh`](examples/free_for_all_brainstorm.sh) | Free-for-all brainstorm |
 | [`simple_chat.py`](examples/simple_chat.py) | Minimal Python example |
@@ -183,10 +188,14 @@ Any provider can act as orchestrator. It speaks first, assigns tasks, evaluates 
 | Directive | Action |
 |---|---|
 | `[ASSIGN AgentName]: task` | Grant floor to the named agent with a task |
-| `[ACCEPT]` | Accept the last output; continue the pipeline |
+| `[ACCEPT]` | Accept the last output into manuscript + artifact store |
 | `[REJECT AgentName]: reason` | Re-grant with revision feedback |
 | `[KICK AgentName]` | Remove an agent from the session |
 | `[SPAWN spec]` | Dynamically create a new specialist agent |
+| `[SKIP AgentName]: reason` | Record skip in manuscript, return floor to orchestrator |
+| `[BREAKOUT policy=… max_rounds=… topic=…]` | Spin up a temporary sub-floor session |
+| `[CODING_SESSION policy=… max_rounds=… topic=…]` | Launch a multi-agent coding sub-floor with file tools |
+| `[REMEMBER category]: content` | Write to in-session memory store |
 | `[TASK_COMPLETE]` | End the session |
 
 Agent spawning goes through **native tool calling** — the orchestrator calls typed tools (`spawn_text_agent`, `spawn_image_agent`, etc.) built from whatever API keys are actually present. It can't hallucinate a provider that isn't configured.
@@ -243,7 +252,16 @@ src/ofp_playground/
 ├── floor/
 │   ├── manager.py              # FloorManager: OFP coordinator
 │   ├── policy.py               # Five floor policies
-│   └── history.py              # Conversation history
+│   ├── history.py              # Conversation history
+│   ├── coding_session.py       # Multi-agent coding sub-floor (shared sandbox + file tools)
+│   └── coding_session_tools.py # File tools injected into coding agents (read/write/edit/todo)
+├── memory/
+│   ├── store.py                # Ephemeral MemoryStore (goals, tasks, decisions, lessons…)
+│   └── artifact_store.py       # Phase ArtifactStore (persisted to result/<session>/phases/)
+├── trace/
+│   ├── collector.py            # EventCollector — records every routed envelope
+│   ├── model.py                # TraceEvent frozen dataclass
+│   └── renderer.py             # D3-based interactive HTML timeline (trace.html)
 ├── agents/
 │   ├── base.py                 # BasePlaygroundAgent
 │   ├── human.py                # Human stdin/stdout agent

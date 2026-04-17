@@ -19,6 +19,15 @@ result/
     │   └── 20260324_112630_codefixer_solution.py
     ├── breakout/                     ← breakout session transcripts (MD)
     │   └── 20260324_112525_scene_development.md
+    ├── sandbox/                      ← coding session shared workspace
+    │   ├── index.html
+    │   ├── main.js
+    │   └── style.css
+    ├── phases/                       ← ArtifactStore phase files
+    │   ├── 01_asset-manifest.md
+    │   ├── 02_char-design.md
+    │   └── 03_geometry-code.md
+    ├── trace.html                    ← D3 interactive event timeline (always written)
     ├── manuscript.txt                ← accumulated accepted outputs
     └── memory.json                   ← session memory dump
 ```
@@ -100,6 +109,20 @@ Full transcripts of breakout sessions. Markdown format with:
 
 Filename: `{timestamp}_{topic_slug}.md`
 
+### `sandbox/`
+
+Shared workspace for coding sessions. All agents in a `[CODING_SESSION]` read from and write to this directory using injected file tools (`read_file`, `write_file`, `edit_file`). Only created when a coding session runs. Output typically includes `index.html`, `main.js`, and `style.css` for browser-runnable projects.
+
+### `phases/`
+
+Phase artifact files written by `ArtifactStore` each time `[ACCEPT]` is processed. Each file is a Markdown document with YAML frontmatter (`phase`, `slug`, `agent`, `timestamp`, `tokens_approx`, `summary`, `depends_on`) followed by the full accepted text. Workers retrieve these via the `read_artifact(slug)` tool rather than receiving the full manuscript on every turn.
+
+Filename: `{NN}_{slug}.md` (e.g., `01_asset-manifest.md`).
+
+### `trace.html`
+
+Self-contained D3-based interactive HTML timeline of every OFP event in the session. Written automatically at session end — no flag required. Shows sender/recipient routing, event types, private vs. broadcast messages, breakout scope, and directive detection. Open in any browser.
+
 ## Implementation
 
 The `SessionOutputManager` (`src/ofp_playground/config/output.py`) creates and manages the session directory:
@@ -114,6 +137,8 @@ output.videos    # Path("result/20260324_112523_a1b2c3d4/videos")
 output.music     # Path("result/20260324_112523_a1b2c3d4/music")
 output.code      # Path("result/20260324_112523_a1b2c3d4/code")
 output.breakout  # Path("result/20260324_112523_a1b2c3d4/breakout")
+output.sandbox   # Path("result/20260324_112523_a1b2c3d4/sandbox")
+output.phases    # Path("result/20260324_112523_a1b2c3d4/phases")
 ```
 
 Each subdirectory is created lazily on first access.

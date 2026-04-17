@@ -39,7 +39,7 @@ FloorManager actions:
 
 #### [ACCEPT]
 
-Accept the last worker's output into the manuscript.
+Accept the last worker's output into the manuscript and phase artifact store.
 
 ```
 [ACCEPT]
@@ -47,8 +47,9 @@ Accept the last worker's output into the manuscript.
 
 FloorManager actions:
 1. Append `_last_worker_text` to `_manuscript` list
-2. Log acceptance
-3. Floor remains with orchestrator
+2. Save to `ArtifactStore` → persisted as `result/<session>/phases/NN_<slug>.md`
+3. Log acceptance
+4. Floor remains with orchestrator
 
 #### [REJECT Name]: reason
 
@@ -101,6 +102,17 @@ FloorManager actions:
 1. Append skip note to manuscript
 2. Floor remains with orchestrator
 
+#### [REMEMBER category]: content
+
+Write a note to the in-session `MemoryStore` directly from an agent's utterance text. The `[REMEMBER]` line is stripped from the manuscript before acceptance.
+
+```
+[REMEMBER decisions]: Use flat animation style with bold outlines
+[REMEMBER lessons:api_failures]: HF FLUX returns 503 during peak hours
+```
+
+Categories: `goals`, `tasks`, `decisions`, `lessons`, `agent_profiles`, `preferences`.
+
 #### [BREAKOUT ...]
 
 Spin up a temporary sub-floor session. See [Breakout Sessions](#breakout-sessions).
@@ -110,6 +122,18 @@ Spin up a temporary sub-floor session. See [Breakout Sessions](#breakout-session
 [BREAKOUT_AGENT -provider anthropic -name PlotWriter -system "Write plot structure"]
 [BREAKOUT_AGENT -provider openai -name DialogueWriter -system "Write dialogue"]
 ```
+
+#### [CODING_SESSION ...] / [CODING_AGENT ...]
+
+Launch a multi-agent coding sub-floor with shared file-system access. See [Coding Sessions](#coding-sessions).
+
+```
+[CODING_SESSION policy=round_robin max_rounds=6 topic=Refine the Three.js platformer]
+[CODING_AGENT -provider anthropic -name DevAlpha -system @development/threejs-developer -timeout 1200]
+[CODING_AGENT -provider openai -name DevBeta -system @development/geometry-builder -timeout 1200]
+```
+
+Workers emit `[CODING_COMPLETE]` when the project is playable/complete, ending the session early.
 
 #### [TASK_COMPLETE]
 
@@ -327,6 +351,110 @@ The orchestrator follows these rules when agents fail:
 
 ---
 
+---
+
+## Phase Artifact Store
+
+### Overview
+
+When an orchestrator issues `[ACCEPT]`, the accepted text is persisted as a Markdown file with YAML frontmatter under `result/<session>/phases/`. This eliminates the context-overflow problem that occurs when the full manuscript is injected into every subsequent directive.
+
+```
+result/<session>/phases/
+├── 01_asset-manifest.md     ← Phase 1 output (AssetDirector)
+├── 02_char-design.md        ← Phase 2 output (CharDesigner)
+├── 03_geometry-code.md      ← Phase 3 output (GeomBuilder)
+└── ...
+```
+
+Each file has frontmatter:
+```yaml
+---
+phase: 3
+slug: geometry-code
+agent: GeomBuilder
+timestamp: 2026-04-17T14:22:01
+depends_on: [char-design]
+tokens_approx: 5200
+summary: "9 buildXxx() Three.js functions for all game assets"
+---
+```
+
+### Accessing Artifacts
+
+The orchestrator and workers receive a compact index in their context:
+
+```
+--- PHASE ARTIFACTS (3 completed) ---
+  01_asset-manifest.md         | AssetDirector   | 9 assets defined for theme...
+  02_char-design.md            | CharDesigner    | Parts tables for all 9 assets
+  03_geometry-code.md          | GeomBuilder     | 9 buildXxx() Three.js functions (~5200 tok)
+--- END PHASE ARTIFACTS ---
+Use read_artifact(slug) to retrieve the full content of any phase.
+```
+
+Workers call `read_artifact(slug)` (injected as a tool) to fetch the full content of any prior phase — by slug substring, phase number, or agent name.
+
+---
+
+## Coding Sessions
+
+### Overview
+
+A coding session is a self-contained round-robin sub-floor where agents collaboratively build a project by reading, writing, and editing files in a **shared local sandbox directory** (`result/<session>/sandbox/`).
+
+Unlike regular agents, coding session agents receive injected file-system tools every turn:
+
+| Tool | Description |
+|------|-------------|
+| `list_workspace` | List all files and their sizes in the sandbox |
+| `read_file` | Read a file from the sandbox |
+| `write_file` | Write or overwrite a file in the sandbox |
+| `edit_file` | Replace a specific string within a file |
+| `update_todo` | Update the shared TODO list |
+
+At the start of each turn, the agent receives a workspace snapshot (file listing + TODO state) in its context.
+
+### Creating a Coding Session
+
+**Tool calling** (preferred for Anthropic/OpenAI/Google orchestrators):
+```python
+create_coding_session(
+    topic="Refine the Three.js platformer game",
+    policy="round_robin",
+    max_rounds=6,
+    agents=[
+        {"name": "DevAlpha", "provider": "anthropic", "system": "...", "timeout": 1200},
+        {"name": "DevBeta", "provider": "openai", "system": "...", "timeout": 1200},
+    ]
+)
+```
+
+**Text directives** (fallback, works with all orchestrators including HuggingFace):
+```
+[CODING_SESSION policy=round_robin max_rounds=6 topic=Refine the Three.js platformer]
+[CODING_AGENT -provider anthropic -name DevAlpha -system @development/threejs-developer -timeout 1200]
+[CODING_AGENT -provider openai -name DevBeta -system @development/geometry-builder -timeout 1200]
+```
+
+### Coding Session Lifecycle
+
+1. Orchestrator triggers session (tool call or directive)
+2. FloorManager creates agents with file tools injected
+3. Phase artifacts and session memory are mirrored into the sandbox as context files
+4. Agents take turns: read workspace → write/edit files → yield
+5. Session ends at `max_rounds` or when any agent emits `[CODING_COMPLETE]`
+6. Full file manifest + project structure returned to orchestrator
+
+### Constraints
+
+- **Provider support**: `openai`, `anthropic`, `google` only — `hf:code-generation` is not supported
+- **One level deep**: coding sessions cannot be nested
+- **Hard timeout**: 1800 seconds
+- **Round range**: 2–50 (default 16)
+
+---
+
 ## Tool Definitions
 
 ### Spawn Tools (`spawn_tools.py`)
@@ -354,3 +482,22 @@ Enabled for all orchestrator agents:
 | `create_breakout_session` | Spin up a temporary sub-floor discussion |
 
 Parameters: `topic`, `policy`, `max_rounds`, `agents[]` (each with `name`, `system`, `provider`, optional `model`).
+
+### Coding Session Tools (`coding_session_tools.py`)
+
+| Tool | Description |
+|------|-------------|
+| `create_coding_session` | Launch a multi-agent coding sub-floor with shared file tools |
+
+Parameters: `topic`, `policy`, `max_rounds`, `agents[]` (each with `name`, `system`, `provider`, optional `model`, optional `timeout`).
+
+Not available for HuggingFace orchestrators — use `[CODING_SESSION]` text directives instead (though HF code-generation agents are unsupported; use Anthropic/OpenAI/Google providers for coding agents).
+
+### Artifact Tools (`memory/artifact_tools.py`)
+
+| Tool | Description |
+|------|-------------|
+| `read_artifact` | Retrieve full content of a phase artifact by slug, phase number, or agent name |
+| `list_artifacts` | List all saved phase artifacts with summaries |
+
+Available to all agents in SHOWRUNNER_DRIVEN sessions. The artifact index is also injected automatically into each directive context.

@@ -32,6 +32,9 @@ FloorManager        LLM Agents           Remote Agents    Media Agents
  - Manages rounds   - Director
  - Memory store     - ShowRunner
  - Breakout
+ - Coding sessions
+ - ArtifactStore         EventCollector (trace/)
+ - Trace timeline  ──────────────────────▶  trace.html
 ```
 
 ## Core Components
@@ -60,10 +63,13 @@ Central coordinator. Responsibilities:
 2. **Envelope dispatch** — receives every envelope, handles each event type
 3. **Conversation history** — `ConversationHistory` instance (last 100 entries)
 4. **Agent lifecycle** — register/unregister, invite/uninvite
-5. **Orchestrator parsing** — `[ASSIGN]`, `[ACCEPT]`, `[REJECT]`, `[KICK]`, `[SPAWN]`, `[BREAKOUT]`, `[TASK_COMPLETE]`
+5. **Orchestrator parsing** — `[ASSIGN]`, `[ACCEPT]`, `[REJECT]`, `[KICK]`, `[SPAWN]`, `[SKIP]`, `[REMEMBER]`, `[BREAKOUT]`/`[BREAKOUT_AGENT]`, `[CODING_SESSION]`/`[CODING_AGENT]`, `[TASK_COMPLETE]`
 6. **Memory store** — ephemeral `MemoryStore` auto-injected into system prompts
-7. **Round tracking** — counts agent utterances, triggers director/showrunner grants at round boundaries
-8. **Session output** — `SessionOutputManager` writes manuscripts, memory dumps
+7. **Artifact store** — `ArtifactStore` persists each accepted phase output to `result/<session>/phases/`; provides `read_artifact(slug)` tool to orchestrators and workers
+8. **Coding sessions** — isolated sub-floor with shared sandbox directory; agents receive `list_workspace`, `read_file`, `write_file`, `edit_file`, `update_todo` tools
+9. **Round tracking** — counts agent utterances, triggers director/showrunner grants at round boundaries
+10. **Trace collector** — `EventCollector` records every routed envelope; `render_trace_html()` writes `result/<session>/trace.html` at session end
+11. **Session output** — `SessionOutputManager` writes manuscripts, memory dumps, phase artifacts
 
 ### FloorController (`src/ofp_playground/floor/policy.py`)
 
@@ -85,6 +91,9 @@ result/
     ├── music/       ← generated audio (Lyria)
     ├── code/        ← generated code files (CodingAgent)
     ├── breakout/    ← breakout session transcripts
+    ├── sandbox/     ← coding session shared workspace (index.html, main.js, etc.)
+    ├── phases/      ← ArtifactStore phase files (01_asset-manifest.md, 02_char-design.md, …)
+    ├── trace.html   ← D3 interactive event timeline (always written)
     ├── manuscript.txt
     └── memory.json
 ```
