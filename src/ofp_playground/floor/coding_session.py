@@ -129,6 +129,7 @@ class CodingSessionManager:
         parent_conversation_id: str,
         sandbox_dir: Path,
         required_context_files: tuple[str, ...] = (),
+        initial_todo_items: tuple[str, ...] = (),
         max_rounds: int = 16,
     ):
         self._bus = bus
@@ -149,7 +150,11 @@ class CodingSessionManager:
                 if path and path.strip()
             )
         )
-        self._todo = TodoList()
+        self._todo = TodoList(list(dict.fromkeys(
+            item.strip()
+            for item in initial_todo_items
+            if item and item.strip()
+        )))
         self._contributors: set[str] = set()  # URIs of agents that have spoken
 
     @property
@@ -795,6 +800,7 @@ async def run_coding_session(
     sandbox_dir: Path,
     max_rounds: int = 16,
     required_context_files: list[str] | None = None,
+    initial_todo_items: list[str] | None = None,
     parent_renderer=None,
     trace_collector: "EventCollector | None" = None,
 ) -> CodingSessionResult:
@@ -811,6 +817,7 @@ async def run_coding_session(
         sandbox_dir: Shared workspace directory for file I/O.
         max_rounds: Maximum agent turns before auto-stop (2–50).
         required_context_files: Sandbox-relative files that agents must read first.
+        initial_todo_items: Initial shared TODO items visible from the first turn.
         parent_renderer: Optional renderer for status messages.
         trace_collector: Optional event collector for tracing.
 
@@ -837,6 +844,7 @@ async def run_coding_session(
         parent_conversation_id=parent_conversation_id,
         sandbox_dir=sandbox_dir,
         required_context_files=tuple(required_context_files or ()),
+        initial_todo_items=tuple(initial_todo_items or ()),
         max_rounds=max_rounds,
     )
 

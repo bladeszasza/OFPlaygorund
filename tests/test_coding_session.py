@@ -279,6 +279,7 @@ class TestToolSchemas:
         assert topic_schema["maxLength"] == 500
         assert "artifact_refs" in tools[0]["input_schema"]["properties"]
         assert "context_files" in tools[0]["input_schema"]["properties"]
+        assert "todo_items" in tools[0]["input_schema"]["properties"]
         # Check providers enum includes available ones
         providers = tools[0]["input_schema"]["properties"]["agents"]["items"]["properties"]["provider"]["enum"]
         assert "anthropic" in providers
@@ -348,6 +349,32 @@ class TestDirectiveConverter:
         assert "[CODING_CONTEXT file=memory/browser-sandbox-delivery.md]" in result
         assert "[CODING_CONTEXT file=textures_data.js]" in result
 
+    def test_with_todo_items_derives_rounds(self):
+        result = tool_use_to_coding_session_directive({
+            "topic": "Build the runtime skeleton",
+            "todo_items": ["Create index.html", "Write main.js", "Polish HUD"],
+            "agents": [
+                {"name": "DevAlpha", "provider": "openai", "system": "@development/threejs-developer"},
+                {"name": "Animator", "provider": "openai", "system": "@development/threejs-animator"},
+            ],
+        })
+        assert "[CODING_SESSION policy=round_robin max_rounds=6 topic=Build the runtime skeleton]" in result
+        assert "[CODING_TODO Create index.html]" in result
+        assert "[CODING_TODO Write main.js]" in result
+        assert "[CODING_TODO Polish HUD]" in result
+
+    def test_explicit_rounds_override_todo_derived_rounds(self):
+        result = tool_use_to_coding_session_directive({
+            "topic": "Build the runtime skeleton",
+            "max_rounds": 9,
+            "todo_items": ["Create index.html", "Write main.js", "Polish HUD"],
+            "agents": [
+                {"name": "DevAlpha", "provider": "openai", "system": "@development/threejs-developer"},
+                {"name": "Animator", "provider": "openai", "system": "@development/threejs-animator"},
+            ],
+        })
+        assert "[CODING_SESSION policy=round_robin max_rounds=9 topic=Build the runtime skeleton]" in result
+
 
 class TestCodingAgentSpecParsing:
     def test_create_breakout_agent_applies_timeout_override(self):
@@ -384,11 +411,14 @@ class TestCodingSessionManager:
             parent_conversation_id="conv:parent",
             sandbox_dir=tmp_path,
             required_context_files=("phases/03_geom-builder.md",),
+            initial_todo_items=("Build index.html", "Build main.js"),
         )
         assert mgr.conversation_id.startswith("coding:")
         assert mgr.speaker_uri == CODING_FM_URI
         assert mgr.sandbox_dir == tmp_path
         assert mgr.required_context_files == ("phases/03_geom-builder.md",)
+        assert "Build index.html" in mgr.todo.render()
+        assert "Build main.js" in mgr.todo.render()
 
     def test_register_agent(self, tmp_path):
         bus = MessageBus()

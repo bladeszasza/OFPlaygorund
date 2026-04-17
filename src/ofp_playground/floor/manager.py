@@ -634,7 +634,7 @@ class FloorManager:
         breakout_agent_specs: list[str] = []    # raw specs from [BREAKOUT_AGENT ...]
         coding_session_header: Optional[dict] = None  # parsed from [CODING_SESSION ...]
         coding_agent_specs: list[str] = []             # raw specs from [CODING_AGENT ...]
-        coding_context_refs = {"artifact_refs": [], "context_files": []}
+        coding_context_refs = {"artifact_refs": [], "context_files": [], "todo_items": []}
 
         # Collapse multi-line [BREAKOUT ...] and [BREAKOUT_AGENT ...] blocks into
         # single lines so the line-by-line parser below can handle them.
@@ -725,6 +725,13 @@ class FloorManager:
                     coding_context_refs["context_files"].append(file_m.group(1).strip())
                 continue
 
+            m = re.match(r"\[CODING_TODO\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                item = m.group(1).strip()
+                if item:
+                    coding_context_refs["todo_items"].append(item)
+                continue
+
             # [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
             m = re.match(r"\[CODING_AGENT\s+(.+?)\]", line, re.IGNORECASE)
             if m:
@@ -740,7 +747,7 @@ class FloorManager:
                 task_parts = [m.group(2)]
                 while i < len(lines):
                     peek = lines[i].strip()
-                    if re.match(r"\[(?:ASSIGN|ASSIGN_PARALLEL|ACCEPT|REJECT|KICK|SPAWN|SKIP|STORE_MEMORY|TASK_COMPLETE|BREAKOUT|BREAKOUT_AGENT|CODING_SESSION|CODING_CONTEXT|CODING_AGENT)[\s\]]", peek, re.IGNORECASE):
+                    if re.match(r"\[(?:ASSIGN|ASSIGN_PARALLEL|ACCEPT|REJECT|KICK|SPAWN|SKIP|STORE_MEMORY|TASK_COMPLETE|BREAKOUT|BREAKOUT_AGENT|CODING_SESSION|CODING_CONTEXT|CODING_TODO|CODING_AGENT)[\s\]]", peek, re.IGNORECASE):
                         break
                     task_parts.append(lines[i])
                     i += 1
@@ -1171,6 +1178,7 @@ class FloorManager:
         policy_str = header["policy"]
         max_rounds = min(max(header["max_rounds"], 2), 50)
         required_context_files = self._resolve_coding_context_files(context_refs)
+        initial_todo_items = context_refs.get("todo_items", [])
 
         try:
             policy = FloorPolicy(policy_str)
@@ -1195,6 +1203,7 @@ class FloorManager:
                 max_rounds,
                 agent_specs,
                 required_context_files,
+                initial_todo_items,
             )
         except Exception as e:
             logger.error("Orchestrator [CODING_SESSION] failed: %s", e, exc_info=True)

@@ -104,6 +104,16 @@ def build_coding_session_tool(settings: "Settings") -> list[dict]:
                             "memory/browser-sandbox-delivery.md or textures_data.js."
                         ),
                     },
+                    "todo_items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional initial TODO items visible to all coding-session "
+                            "agents from their first turn. If max_rounds is omitted, "
+                            "the session auto-derives it as todo_items x agents "
+                            "(clamped to 2-50)."
+                        ),
+                    },
                     "policy": {
                         "type": "string",
                         "enum": _CODING_POLICIES,
@@ -115,7 +125,9 @@ def build_coding_session_tool(settings: "Settings") -> list[dict]:
                         "type": "integer",
                         "description": (
                             "Maximum number of agent turns before the session "
-                            "auto-stops. Default 16. Range 2-50."
+                            "auto-stops. Default 16. Range 2-50. If omitted and "
+                            "todo_items are provided, rounds auto-derive from "
+                            "todo_items x agents."
                         ),
                     },
                     "agents": {
@@ -181,8 +193,12 @@ def tool_use_to_coding_session_directive(args: dict) -> str:
     topic = str(args.get("topic", "") or "Coding session")
     topic = " ".join(topic.replace("[", "(").replace("]", ")").split())
     policy = args.get("policy", "round_robin")
-    max_rounds = args.get("max_rounds", 16)
     agents = args.get("agents", [])
+    todo_items = [
+        " ".join(str(item).replace("[", "(").replace("]", ")").split())
+        for item in args.get("todo_items", [])
+        if str(item).strip()
+    ]
     artifact_refs = [
         str(ref).strip()
         for ref in args.get("artifact_refs", [])
@@ -193,10 +209,15 @@ def tool_use_to_coding_session_directive(args: dict) -> str:
         for path in args.get("context_files", [])
         if str(path).strip()
     ]
+    if args.get("max_rounds") is None and todo_items and agents:
+        max_rounds = min(max(len(todo_items) * len(agents), 2), 50)
+    else:
+        max_rounds = args.get("max_rounds", 16)
 
     lines = [f"[CODING_SESSION policy={policy} max_rounds={max_rounds} topic={topic}]"]
     lines.extend(f"[CODING_CONTEXT artifact={ref}]" for ref in artifact_refs)
     lines.extend(f"[CODING_CONTEXT file={path}]" for path in context_files)
+    lines.extend(f"[CODING_TODO {item}]" for item in todo_items)
     for agent in agents:
         name = agent.get("name", "Coder")
         system = agent.get("system", "")

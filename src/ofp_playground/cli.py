@@ -1127,6 +1127,7 @@ async def _attach_floor_callbacks(
         max_rounds: int,
         agent_specs: list[str],
         required_context_files: list[str],
+        initial_todo_items: list[str],
     ) -> "tuple[str, object]":
         from ofp_playground.floor.coding_session import (
             run_coding_session,
@@ -1163,6 +1164,7 @@ async def _attach_floor_callbacks(
             sandbox_dir=sandbox_dir,
             max_rounds=max_rounds,
             required_context_files=required_context_files,
+            initial_todo_items=initial_todo_items,
             parent_renderer=renderer,
             trace_collector=floor.trace_collector,
         )
