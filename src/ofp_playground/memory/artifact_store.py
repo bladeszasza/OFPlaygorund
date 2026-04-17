@@ -206,6 +206,10 @@ class ArtifactStore:
         art = self._resolve(query)
         return art.content if art else None
 
+    def resolve(self, query: str) -> Optional[PhaseArtifact]:
+        """Return the artifact metadata for *query* if it can be resolved."""
+        return self._resolve(query)
+
     def read_with_header(self, query: str) -> Optional[str]:
         """Retrieve full artifact including the markdown frontmatter."""
         art = self._resolve(query)

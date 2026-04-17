@@ -77,6 +77,18 @@ class TestAcceptDirective:
         # Should not raise even with empty last worker text
         await fm._handle_orchestrator_directives("[ACCEPT]")
 
+    @pytest.mark.asyncio
+    async def test_accept_mirrors_phase_into_sandbox(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_name = "GeomBuilder"
+        fm._last_worker_text = "Hero geometry spec"
+
+        await fm._handle_orchestrator_directives("[ACCEPT]")
+
+        mirrored = fm.output.sandbox / "phases" / "01_geom-builder.md"
+        assert mirrored.exists()
+        assert "Hero geometry spec" in mirrored.read_text(encoding="utf-8")
+
 
 # ---------------------------------------------------------------------------
 # _handle_orchestrator_directives — [TASK_COMPLETE]
@@ -231,6 +243,58 @@ class TestAssignDirective:
         bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
         # Should not raise even if the agent isn't registered
         await fm._handle_orchestrator_directives("[ASSIGN PhantomAgent]: Some task")
+
+    @pytest.mark.asyncio
+    async def test_assign_includes_mirrored_sandbox_context_for_local_agent(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        worker_uri = "tag:test:writer"
+        worker_q: asyncio.Queue = asyncio.Queue()
+        await bus.register(worker_uri, worker_q)
+        fm.register_agent(worker_uri, "Writer")
+        fm._artifact_store.save(agent_name="GeomBuilder", content="Phase body")
+        fm._memory_store.store("tasks", "runner", "Build browser main.js")
+        fm._send_directed_utterance = AsyncMock()
+        fm.grant_to = AsyncMock()
+
+        await fm._handle_orchestrator_directives("[ASSIGN Writer]: Build main.js")
+
+        directive = fm._send_directed_utterance.await_args.args[0]
+        assert "phases/01_geom-builder.md" in directive
+        assert "memory/browser-sandbox-delivery.md" in directive
+        assert "memory/session-memory.md" in directive
+        assert (fm.output.sandbox / "phases" / "01_geom-builder.md").exists()
+
+
+class TestCodingSessionDirective:
+    @pytest.mark.asyncio
+    async def test_coding_session_passes_resolved_context_files_to_callback(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+
+        fm._artifact_store.save(agent_name="GeomBuilder", content="Phase body")
+        fm._coding_session_callback = AsyncMock(return_value=("Coding done", None))
+        fm._send_directed_utterance = AsyncMock()
+        fm.grant_to = AsyncMock()
+
+        await fm._handle_orchestrator_directives(
+            "[CODING_SESSION policy=round_robin max_rounds=4 topic=Build skeleton]\n"
+            "[CODING_CONTEXT artifact=geom-builder]\n"
+            "[CODING_CONTEXT file=memory/browser-sandbox-delivery.md]\n"
+            "[CODING_AGENT -provider openai -name DevAlpha -system @development/threejs-developer]"
+        )
+
+        callback_args = fm._coding_session_callback.await_args.args
+        assert callback_args[0] == "Build skeleton"
+        assert callback_args[1] == FloorPolicy.ROUND_ROBIN
+        assert callback_args[2] == 4
+        assert callback_args[3] == [
+            "-provider openai -name DevAlpha -system @development/threejs-developer"
+        ]
+        assert callback_args[4] == [
+            "phases/01_geom-builder.md",
+            "memory/browser-sandbox-delivery.md",
+        ]
+        assert (fm.output.sandbox / "phases" / "01_geom-builder.md").exists()
 
 
 class TestOrchestratorRecoveryBackoff:

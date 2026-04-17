@@ -29,6 +29,7 @@ from ofp_playground.bus.message_bus import MessageBus, FLOOR_MANAGER_URI
 from ofp_playground.config.output import SessionOutputManager
 from ofp_playground.floor.history import ConversationHistory
 from ofp_playground.floor.policy import FloorController, FloorPolicy
+from ofp_playground.floor.sandbox_context import PHASES_DIRNAME, build_sandbox_context_note, sync_sandbox_context
 from ofp_playground.memory.artifact_store import ArtifactStore
 from ofp_playground.memory.store import MemoryStore
 from ofp_playground.models.artifact import Utterance
@@ -175,6 +176,15 @@ class FloorManager:
     @property
     def floor_holder(self) -> Optional[str]:
         return self._policy.current_holder
+
+    def _sync_sandbox_context(self) -> str:
+        """Mirror phase and memory context into the shared sandbox and render guidance."""
+        context = sync_sandbox_context(
+            self._output.sandbox,
+            self._artifact_store,
+            self._memory_store,
+        )
+        return build_sandbox_context_note(context)
 
     def register_director(self, speaker_uri: str) -> None:
         """Mark an agent as the narrative director (gets floor at round boundaries)."""
@@ -609,6 +619,8 @@ class FloorManager:
             [BREAKOUT policy=<p> max_rounds=<n> topic=<t>]
             [BREAKOUT_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
             [CODING_SESSION policy=<p> max_rounds=<n> topic=<t>]
+            [CODING_CONTEXT artifact=<slug-or-phase>]
+            [CODING_CONTEXT file=<sandbox-relative-path>]
             [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
             [TASK_COMPLETE]
         """
@@ -622,6 +634,7 @@ class FloorManager:
         breakout_agent_specs: list[str] = []    # raw specs from [BREAKOUT_AGENT ...]
         coding_session_header: Optional[dict] = None  # parsed from [CODING_SESSION ...]
         coding_agent_specs: list[str] = []             # raw specs from [CODING_AGENT ...]
+        coding_context_refs = {"artifact_refs": [], "context_files": [], "todo_items": []}
 
         # Collapse multi-line [BREAKOUT ...] and [BREAKOUT_AGENT ...] blocks into
         # single lines so the line-by-line parser below can handle them.
@@ -649,6 +662,12 @@ class FloorManager:
         text = re.sub(
             r'\[CODING_AGENT\b(.*?)\]',
             lambda m: '[CODING_AGENT ' + ' '.join(m.group(1).split()) + ']',
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        text = re.sub(
+            r'\[CODING_CONTEXT\b(.*?)\]',
+            lambda m: '[CODING_CONTEXT ' + ' '.join(m.group(1).split()) + ']',
             text,
             flags=re.DOTALL | re.IGNORECASE,
         )
@@ -695,6 +714,24 @@ class FloorManager:
                 }
                 continue
 
+            m = re.match(r"\[CODING_CONTEXT\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                spec = m.group(1).strip()
+                artifact_m = re.search(r"artifact=(\S+)", spec)
+                file_m = re.search(r"file=(\S+)", spec)
+                if artifact_m:
+                    coding_context_refs["artifact_refs"].append(artifact_m.group(1).strip())
+                if file_m:
+                    coding_context_refs["context_files"].append(file_m.group(1).strip())
+                continue
+
+            m = re.match(r"\[CODING_TODO\s+(.+?)\]", line, re.IGNORECASE)
+            if m:
+                item = m.group(1).strip()
+                if item:
+                    coding_context_refs["todo_items"].append(item)
+                continue
+
             # [CODING_AGENT -provider <p> -name <n> -system <s> [-model <m>]]
             m = re.match(r"\[CODING_AGENT\s+(.+?)\]", line, re.IGNORECASE)
             if m:
@@ -710,7 +747,7 @@ class FloorManager:
                 task_parts = [m.group(2)]
                 while i < len(lines):
                     peek = lines[i].strip()
-                    if re.match(r"\[(?:ASSIGN|ASSIGN_PARALLEL|ACCEPT|REJECT|KICK|SPAWN|SKIP|STORE_MEMORY|TASK_COMPLETE|BREAKOUT)[\s\]]", peek, re.IGNORECASE):
+                    if re.match(r"\[(?:ASSIGN|ASSIGN_PARALLEL|ACCEPT|REJECT|KICK|SPAWN|SKIP|STORE_MEMORY|TASK_COMPLETE|BREAKOUT|BREAKOUT_AGENT|CODING_SESSION|CODING_CONTEXT|CODING_TODO|CODING_AGENT)[\s\]]", peek, re.IGNORECASE):
                         break
                     task_parts.append(lines[i])
                     i += 1
@@ -746,6 +783,10 @@ class FloorManager:
                     artifact_index = self._artifact_store.get_index()
                     if artifact_index and not is_remote:
                         directive += f"\n\n{artifact_index}"
+                    if not is_remote:
+                        sandbox_note = self._sync_sandbox_context()
+                        if sandbox_note:
+                            directive += f"\n\n{sandbox_note}"
                     if not self._memory_store.is_empty() and not is_remote:
                         memory_summary = self._memory_store.get_summary(max_chars=600)
                         directive += f"\n\n--- SESSION MEMORY ---\n{memory_summary}\n---"
@@ -816,6 +857,9 @@ class FloorManager:
                 # Dispatch directive to all agents simultaneously
                 async def _dispatch_parallel(uri: str, name: str, task: str = task) -> None:
                     directive = f"[PARALLEL DIRECTIVE for {name}]: {task}"
+                    sandbox_note = self._sync_sandbox_context()
+                    if sandbox_note:
+                        directive += f"\n\n{sandbox_note}"
                     await self._send_directed_utterance(directive, target_uri=uri)
                     await self.grant_to(uri)
 
@@ -837,6 +881,7 @@ class FloorManager:
                         agent_name=self._last_worker_name or "unknown",
                         content=self._last_worker_text,
                     )
+                    self._sync_sandbox_context()
                     self._last_worker_text = ""
                 if self._renderer:
                     word_count = sum(len(chunk.split()) for chunk in self._manuscript)
@@ -855,11 +900,13 @@ class FloorManager:
                     self._assigned_uri = target_uri
                     self._orchestrator_idle_grants = 0
                     self._policy._request_queue.clear()
+                    directive = f"[DIRECTIVE for {target_name}]: Revision requested — {reason}"
+                    if "remote-" not in target_uri:
+                        sandbox_note = self._sync_sandbox_context()
+                        if sandbox_note:
+                            directive += f"\n\n{sandbox_note}"
                     await self.grant_to(target_uri)
-                    await self._send_directed_utterance(
-                        f"[DIRECTIVE for {target_name}]: Revision requested — {reason}",
-                        target_uri=target_uri,
-                    )
+                    await self._send_directed_utterance(directive, target_uri=target_uri)
                     if self._renderer:
                         self._renderer.show_system_event(
                             f"[Orchestrator] Rejected {target_name}: {reason[:60]}"
@@ -952,7 +999,11 @@ class FloorManager:
 
         # Execute coding session if one was requested
         if coding_session_header and coding_agent_specs:
-            await self._execute_coding_session(coding_session_header, coding_agent_specs)
+            await self._execute_coding_session(
+                coding_session_header,
+                coding_agent_specs,
+                coding_context_refs,
+            )
 
     @staticmethod
     def _breakout_topic_keywords(topic: str) -> set[str]:
@@ -1075,7 +1126,49 @@ class FloorManager:
                 "[Orchestrator] Breakout completed — summary injected"
             )
 
-    async def _execute_coding_session(self, header: dict, agent_specs: list[str]) -> None:
+    def _resolve_coding_context_files(self, context_refs: dict) -> list[str]:
+        """Resolve coding-session artifact and file refs to sandbox-relative paths."""
+        sandbox_context = sync_sandbox_context(
+            self._output.sandbox,
+            self._artifact_store,
+            self._memory_store,
+        )
+        known_paths = set(sandbox_context.phase_files) | set(sandbox_context.memory_files)
+        resolved: list[str] = []
+        seen: set[str] = set()
+
+        for ref in context_refs.get("artifact_refs", []):
+            query = str(ref).strip()
+            if not query:
+                continue
+            artifact = self._artifact_store.resolve(query) if self._artifact_store else None
+            if artifact is None:
+                logger.warning("Unknown coding-session artifact ref '%s'", query)
+                continue
+            relative_path = f"{PHASES_DIRNAME}/{artifact.file_path.name}"
+            if relative_path not in seen:
+                resolved.append(relative_path)
+                seen.add(relative_path)
+
+        for path in context_refs.get("context_files", []):
+            relative_path = str(path).strip()
+            if not relative_path or relative_path in seen:
+                continue
+            absolute_path = self._output.sandbox / relative_path
+            if relative_path in known_paths or absolute_path.exists():
+                resolved.append(relative_path)
+                seen.add(relative_path)
+                continue
+            logger.warning("Missing coding-session context file '%s'", relative_path)
+
+        return resolved
+
+    async def _execute_coding_session(
+        self,
+        header: dict,
+        agent_specs: list[str],
+        context_refs: dict,
+    ) -> None:
         """Spawn coding agents, run a coding session, inject result.
 
         After the session completes, the project manifest is sent to the
@@ -1084,6 +1177,8 @@ class FloorManager:
         topic = header["topic"]
         policy_str = header["policy"]
         max_rounds = min(max(header["max_rounds"], 2), 50)
+        required_context_files = self._resolve_coding_context_files(context_refs)
+        initial_todo_items = context_refs.get("todo_items", [])
 
         try:
             policy = FloorPolicy(policy_str)
@@ -1102,7 +1197,14 @@ class FloorManager:
             return
 
         try:
-            callback_result = await self._coding_session_callback(topic, policy, max_rounds, agent_specs)
+            callback_result = await self._coding_session_callback(
+                topic,
+                policy,
+                max_rounds,
+                agent_specs,
+                required_context_files,
+                initial_todo_items,
+            )
         except Exception as e:
             logger.error("Orchestrator [CODING_SESSION] failed: %s", e, exc_info=True)
             callback_result = f"[Coding session: {topic[:60]}] — failed: {e}"

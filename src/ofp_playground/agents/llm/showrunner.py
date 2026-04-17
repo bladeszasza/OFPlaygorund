@@ -1,6 +1,7 @@
 """Show Runner agent — speaks last each round, synthesizes and directs next round."""
 from __future__ import annotations
 
+import json
 import logging
 from typing import Callable, Optional
 
@@ -14,6 +15,51 @@ from ofp_playground.agents.llm.openai import OpenAIAgent
 from ofp_playground.bus.message_bus import MessageBus
 
 logger = logging.getLogger(__name__)
+
+ORCHESTRATOR_MAX_OUTPUT_TOKENS = 4096
+
+
+def _parse_json_tool_arguments(tool_name: str, raw_arguments: object) -> Optional[dict]:
+    """Parse JSON-encoded tool arguments without crashing on truncation.
+
+    Some provider SDKs return tool arguments as JSON strings. If the payload is
+    truncated mid-string, json.loads() raises and can kill the entire
+    orchestrator turn. Skip malformed calls instead so the model can recover on
+    the next grant.
+    """
+    if isinstance(raw_arguments, dict):
+        return raw_arguments
+    if raw_arguments is None:
+        logger.warning("Skipping %s tool call with empty arguments", tool_name)
+        return None
+    if not isinstance(raw_arguments, str):
+        logger.warning(
+            "Skipping %s tool call with unsupported argument type: %s",
+            tool_name,
+            type(raw_arguments).__name__,
+        )
+        return None
+
+    try:
+        parsed = json.loads(raw_arguments)
+    except json.JSONDecodeError as exc:
+        preview = raw_arguments[:200].replace("\n", "\\n")
+        logger.warning(
+            "Skipping malformed tool arguments for %s: %s; raw=%r",
+            tool_name,
+            exc,
+            preview,
+        )
+        return None
+
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "Skipping %s tool call with non-object arguments: %s",
+            tool_name,
+            type(parsed).__name__,
+        )
+        return None
+    return parsed
 
 SHOWRUNNER_SYSTEM_PROMPT = """You are {name}, the SHOW RUNNER of a collaborative multi-agent story.
 
@@ -484,7 +530,6 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
 
     async def _generate_response(self, participants: list[str]) -> Optional[str]:
         import asyncio
-        import json
         loop = asyncio.get_event_loop()
         from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_hf_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
@@ -532,7 +577,9 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
             # Collect HF tool call objects for potential recall loop
             recall_results: list[tuple] = []  # (tc, result_str)
             for tc in choice.tool_calls:
-                args = json.loads(tc.function.arguments)
+                args = _parse_json_tool_arguments(tc.function.name, tc.function.arguments)
+                if args is None:
+                    continue
                 name = tc.function.name
                 if name in ("store_memory", "recall_memory") and memory_store:
                     result = execute_memory_tool(name, args, memory_store, self._name)
@@ -575,7 +622,9 @@ class OrchestratorAgent(_OrchestratorBase, HuggingFaceAgent):
                 choice2 = response2.choices[0].message
                 if choice2.tool_calls:
                     for tc in choice2.tool_calls:
-                        args = json.loads(tc.function.arguments)
+                        args = _parse_json_tool_arguments(tc.function.name, tc.function.arguments)
+                        if args is None:
+                            continue
                         directive = self._spawn_or_assign(tc.function.name, args)
                         if directive:
                             spawn_directives.append(directive)
@@ -763,7 +812,6 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
 
     async def _generate_response(self, participants: list[str]) -> Optional[str]:
         import asyncio
-        import json
         loop = asyncio.get_event_loop()
         from ofp_playground.agents.llm.spawn_tools import build_spawn_tools, to_openai_tools
         from ofp_playground.memory.tools import build_memory_tools, execute_memory_tool
@@ -792,7 +840,7 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
                 "model": self._model,
                 "instructions": system,
                 "input": inp,
-                "max_output_tokens": 1000,
+                "max_output_tokens": ORCHESTRATOR_MAX_OUTPUT_TOKENS,
             }
             if openai_tools:
                 kwargs["tools"] = openai_tools
@@ -807,7 +855,9 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
 
         for item in response.output:
             if item.type == "function_call":
-                args = json.loads(item.arguments)
+                args = _parse_json_tool_arguments(item.name, item.arguments)
+                if args is None:
+                    continue
                 if item.name in ("store_memory", "recall_memory") and memory_store:
                     result = execute_memory_tool(item.name, args, memory_store, self._name)
                     if item.name == "recall_memory":
@@ -848,7 +898,9 @@ class OpenAIOrchestratorAgent(_OrchestratorBase, OpenAIAgent):
             response2 = await loop.run_in_executor(None, lambda: _call(history + extra_input))
             for item2 in response2.output:
                 if item2.type == "function_call":
-                    args2 = json.loads(item2.arguments)
+                    args2 = _parse_json_tool_arguments(item2.name, item2.arguments)
+                    if args2 is None:
+                        continue
                     directive2 = self._spawn_or_assign(item2.name, args2)
                     if directive2:
                         spawn_directives.append(directive2)
@@ -930,7 +982,7 @@ class GoogleOrchestratorAgent(_OrchestratorBase, GoogleAgent):
             client = genai.Client(api_key=self._api_key)
             config_kwargs: dict = {
                 "system_instruction": system,
-                "max_output_tokens": 1000,
+                "max_output_tokens": ORCHESTRATOR_MAX_OUTPUT_TOKENS,
             }
             if google_tools:
                 config_kwargs["tools"] = google_tools

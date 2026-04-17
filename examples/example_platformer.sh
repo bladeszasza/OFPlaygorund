@@ -247,10 +247,10 @@ After DevAlpha delivers main.js, use the create_coding_session tool to launch a 
 Use read_artifact to compose a focused topic brief. Include the geometry code (Phase 3), texture specs (Phase 4), mechanics (Phase 6), and atmosphere (Phase 7) in the topic. Omit design-phase narrative — coding agents need only implementation specs.
 Set each coding agent timeout to 1200 seconds.
   policy: round_robin
-  max_rounds: 6
+  max_rounds: 4
   agents:
     - name: DevAlpha,  provider: openai,    model: gpt-5.4-2026-03-05,      system: @development/threejs-developer, timeout: 1200
-    - name: DevBeta,   provider: openai,    model: gpt-5.4-2026-03-05, system: @development/geometry-builder, timeout: 1200
+    - name: DevBeta,   provider: openai,    model: gpt-5.4-2026-03-05,      system: @development/geometry-builder, timeout: 1200
 
 TARGET PROJECT STRUCTURE (file://-safe runtime):
   index.html   — loads three.min.js from CDN as classic script, then <script src="./main.js" defer>

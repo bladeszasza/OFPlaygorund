@@ -26,9 +26,14 @@ mypy src/
 
 # Run the CLI
 ofp-playground start --help
+ofp-playground web --help    # Gradio web UI (separate subcommand, not a --web flag)
 ofp-playground agents        # List available agent slugs from agents/ library
 ofp-playground validate      # Validate configuration
 ```
+
+Key CLI flags for `start` and `web`: `--policy`, `--agent` (repeatable), `--remote` (remote agent slug/URL, repeatable), `--topic`, `--no-human` (fully autonomous sessions), `--max-turns`, `--show-floor-events`, `-v`/`--verbose`.
+
+Tests use `async def` without `@pytest.mark.asyncio` — `asyncio_mode = "auto"` is set in `pyproject.toml`. Ruff enforces `line-length = 100`, `target-version = "py310"`.
 
 ## Architecture
 
@@ -96,11 +101,17 @@ When `SHOWRUNNER_DRIVEN` policy is active, one agent acts as orchestrator. It re
 | Directive | Action |
 |-----------|--------|
 | `[ASSIGN AgentName]: task` | Grant floor to that agent with a task |
-| `[ACCEPT]` | Accept the last worker's output |
+| `[ACCEPT]` | Accept the last worker's output into manuscript |
 | `[REJECT AgentName]: reason` | Ask agent to redo |
 | `[KICK AgentName]` | Remove agent from session |
 | `[SPAWN spec]` | Dynamically create a new agent |
-| `[TASK_COMPLETE]` | End the session |
+| `[SKIP AgentName]: reason` | Record skip in manuscript, return floor to orchestrator |
+| `[REMEMBER category]: content` | Write to in-session `MemoryStore` from worker output |
+| `[BREAKOUT policy=<p> max_rounds=<n> topic=<t>]` | Spin up an isolated sub-floor; follow with `[BREAKOUT_AGENT]` lines |
+| `[BREAKOUT_AGENT -provider <p> -name <n> -system <s>]` | Define participants for the preceding `[BREAKOUT]` |
+| `[CODING_SESSION policy=<p> max_rounds=<n> topic=<t>]` | Launch a multi-agent coding sub-floor; follow with `[CODING_AGENT]` lines |
+| `[CODING_AGENT -provider <p> -name <n> -system <s> -timeout <s>]` | Define participants for the preceding `[CODING_SESSION]` |
+| `[TASK_COMPLETE]` | End the session, output manuscript |
 
 The FloorManager parses these directives in `_handle_orchestrator_directives()` and accumulates accepted outputs into a shared manuscript.
 
@@ -123,6 +134,22 @@ ofp-playground agents     # list all available slugs
 Loaded via [`src/ofp_playground/agents/library.py`](src/ofp_playground/agents/library.py), cached per process. Full documentation, category breakdown, and how to add new personas: [`docs/agents-library.md`](docs/agents-library.md).
 
 **`@development/coding-agent`** is auto-loaded by `BaseCodingAgent` when no synopsis is provided. Other key coding personas: `@development/code-reviewer`, `@development/bug-hunter`, `@development/tdd-expert`, `@development/technical-planner`, `@development/tech-lead`, `@development/test-writer`, `@development/qa-tester`, `@development/pr-merger`.
+
+### Artifact Store
+
+In SHOWRUNNER_DRIVEN pipelines, each accepted phase output is persisted to `result/<session>/phases/` as a Markdown file with YAML frontmatter (`ArtifactStore` in `memory/artifact_store.py`). This avoids injecting the full manuscript into every directive (which causes token overflow).
+
+The orchestrator and workers receive a compact artifact index in their context and can call `read_artifact(slug)` to retrieve any prior phase's full content. Workers should call `read_artifact` at the start of their turn to access the outputs they depend on. Accepted outputs are also still accumulated in `_manuscript`, but the index is the preferred reference for coding agents.
+
+### Coding Sessions
+
+An orchestrator can launch a multi-agent coding sub-floor via `[CODING_SESSION]` directives (or `create_coding_session` tool). Key details:
+
+- Agents operate in a shared sandbox directory (`result/<session>/sandbox/`) and are given file-system tools: `list_workspace`, `read_file`, `write_file`, `edit_file`, `update_todo`.
+- Each agent's turn begins with a workspace snapshot (file listing + TODO state) injected into context.
+- Ends when `max_rounds` is reached or any agent emits `[CODING_COMPLETE]`.
+- Results include the full file manifest; output is saved under `result/<session>/sandbox/`.
+- Hard timeout: 1800 seconds. One nesting level permitted (no coding sessions inside coding sessions).
 
 ### Breakout Sessions
 
@@ -149,7 +176,11 @@ The FloorManager initialises the collector at startup and registers each joining
 
 ### Web UI (Gradio)
 
-Pass `--web` to `ofp-playground start` to launch the Gradio interface instead of the terminal renderer. The `WebHumanAgent` replaces `HumanAgent`; it accepts user input from the browser and streams agent utterances back as chat bubbles. Media (images/video/audio) renders inline.
+Use the `ofp-playground web` subcommand (not a flag on `start`) to launch the Gradio interface. Extra flags: `--host`, `--port` (default 7860), `--share`. The `WebHumanAgent` replaces `HumanAgent`; it accepts user input from the browser and streams agent utterances back as chat bubbles. Media (images/video/audio) renders inline.
+
+### Remote Agents
+
+Pass `--remote <slug-or-url>` (repeatable) to proxy an external HTTP OFP endpoint as a participant. Known slugs: `polly` (echo), `arxiv`, `github`, `sec`, `web-search`, `wikipedia`/`wiki`, `stella` (NASA), `verity` (hallucination detector), `profanity`. `RemoteOFPAgent._should_respond()` blocks responses to other remote agents to prevent cascade loops and only reacts to `[DIRECTIVE for <name>]` messages from the floor manager.
 
 ### Configuration & API Keys
 
