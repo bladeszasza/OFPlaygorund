@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Directory Is
 
-`agents/` is a library of 222 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
+`agents/` is a library of 223 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
 
 The library is loaded by `src/ofp_playground/agents/library.py`. Every `agents/<category>/<agent-name>/SOUL.md` is addressable as `@category/agent-name` without any registration step.
 
@@ -74,6 +74,7 @@ SeriesDirector → CharacterArchitect → NarrativePacingArchitect → VerseArch
 - `@creative/verse-architect` — narrative poetry specialist; designs verse threads where each fragment is a quest artifact discovered at a beat; knows meter (anapestic/trochaic/iambic/accentual); produces Verse Thread Manifest
 - `@creative/prose-novelist` — sole executor of finished prose; reads all three upstream specs before writing; inserts verse fragments verbatim; word budget tolerance ±15% per phase
 - `@creative/aquarelle-painter` — watercolour illustration specialist; translates beats into image generation prompts; technique mapped to beat type (wet-on-wet for wonder, lost edge for threshold, paper white for verse fragment discovery); style references: Klee, Rackham, Dulac, Nielsen
+- `@creative/character-memory-keeper` — condensed character state archivist; reads breakout transcripts and writes 150–200-word per-character memory MDs injected as system prompts in subsequent breakout sessions
 
 ## Categories
 
@@ -82,7 +83,7 @@ SeriesDirector → CharacterArchitect → NarrativePacingArchitect → VerseArch
 | `marketing` | 28 | Largest category |
 | `development` | 27 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
 | `business` | 14 | |
-| `creative` | 30 | +6 illustrated fiction cluster |
+| `creative` | 31 | +6 illustrated fiction cluster + MemoryKeeper |
 | `finance` | 10 | |
 | `devops` | 10 | |
 | `productivity` | 9 | |
