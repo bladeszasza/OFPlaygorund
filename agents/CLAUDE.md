@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Directory Is
 
-`agents/` is a library of 216 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
+`agents/` is a library of 222 SOUL.md persona files — structured system prompts for AI agents — organized into 24 category subdirectories. There is no build system, tests, or executable code here. The only task is reading, writing, and maintaining `SOUL.md` files.
 
 The library is loaded by `src/ofp_playground/agents/library.py`. Every `agents/<category>/<agent-name>/SOUL.md` is addressable as `@category/agent-name` without any registration step.
 
@@ -62,6 +62,19 @@ The procedural platformer cluster extends the blocky pipeline into a full game g
 - `@development/platformer-architect` — produces implementation-ready 2.5D endless runner specs: physics, scroll system, AABB collision, difficulty curve, Web Audio SFX, AND the showcase home screen (rotating hero on pedestal, fade transition, start button)
 - All feed into `examples/example_platformer.sh` which runs 8 phases: ThemeAssetDirector → BlockyCharacterDesigner × 9 → GeometryBuilder → TextureDirector → DALL-E TextureGen → PlatformerArchitect → SceneComposer → coding session (14 rounds)
 
+The illustrated fiction cluster (`@creative/series-director`, `@creative/character-architect`, `@creative/narrative-pacing-architect`, `@creative/verse-architect`, `@creative/prose-novelist`, `@creative/aquarelle-painter`) is a strict 6-soul pipeline for producing verse-threaded, illustrated narrative fiction. All six souls share a common vocabulary (`beat`, `phase`, `word budget`, `arc`, `seed`, `echo`, `payload`, `verse fragment`, `unlock condition`, `refrain`, `verse thread`, `threshold`, `mirror character`, `anchor character`, `shadow`) that must stay in sync if any soul is updated. Pipeline order:
+
+```
+SeriesDirector → CharacterArchitect → NarrativePacingArchitect → VerseArchitect → ProseNovelist → AquarellePainter
+```
+
+- `@creative/series-director` — orchestrator; produces Series Bible and Story Briefs; manages seeds/payoffs across 1–12 stories; mode-aware (one-book / anthology / shared-world / flexible)
+- `@creative/character-architect` — hero arc design (hero's journey framework); side character roles (mirror/anchor/shadow); produces Character Blueprint
+- `@creative/narrative-pacing-architect` — word budget allocation across 5 phases (Setup 10% / Complication 30% / Deepening 25% / Crisis 20% / Resolution 15%); beat lists; tension curves; produces Story Spine
+- `@creative/verse-architect` — narrative poetry specialist; designs verse threads where each fragment is a quest artifact discovered at a beat; knows meter (anapestic/trochaic/iambic/accentual); produces Verse Thread Manifest
+- `@creative/prose-novelist` — sole executor of finished prose; reads all three upstream specs before writing; inserts verse fragments verbatim; word budget tolerance ±15% per phase
+- `@creative/aquarelle-painter` — watercolour illustration specialist; translates beats into image generation prompts; technique mapped to beat type (wet-on-wet for wonder, lost edge for threshold, paper white for verse fragment discovery); style references: Klee, Rackham, Dulac, Nielsen
+
 ## Categories
 
 | Category | Count | Notes |
@@ -69,7 +82,7 @@ The procedural platformer cluster extends the blocky pipeline into a full game g
 | `marketing` | 28 | Largest category |
 | `development` | 27 | Coding-methodology personas; `@development/coding-agent` auto-loaded by `BaseCodingAgent` |
 | `business` | 14 | |
-| `creative` | 24 | |
+| `creative` | 30 | +6 illustrated fiction cluster |
 | `finance` | 10 | |
 | `devops` | 10 | |
 | `productivity` | 9 | |
