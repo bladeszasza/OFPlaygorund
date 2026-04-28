@@ -16,7 +16,7 @@ A ComfyUI-inspired visual node canvas for building and running OFP multi-agent f
 ## Non-Goals
 
 - Replacing the CLI or Gradio web UI
-- Persisting canvas layouts to disk (out of scope for v1)
+- Syncing canvas layouts to the server (positions are client-only via localStorage)
 - Mobile / responsive support
 
 ---
@@ -31,7 +31,7 @@ Canvas       →  FastAPI bridge  →  _run_session()  →  FloorManager + Messa
                   React canvas (React Flow)
 ```
 
-The `session_bridge.py` module installs itself as the `MessageBus` collector via the existing `set_collector()` hook (same mechanism used by `EventCollector` today). It serialises every routed envelope to a JSON WebSocket event and broadcasts to connected clients. For the live trace, it additionally calls through to the real `EventCollector` so `trace.html` live-mode gets the same events.
+The `session_bridge.py` module installs itself as the `MessageBus` collector via the existing `set_collector()` hook (same mechanism used by `EventCollector` today). Because `record()` is called synchronously from `MessageBus.send()` but WebSocket broadcast is async, the bridge uses an internal `asyncio.Queue`: `record()` calls `queue.put_nowait()` and a background task drains the queue and broadcasts. It also calls through to the real `EventCollector` so `trace.html` live-mode gets the same events.
 
 ### Project Layout
 
@@ -84,7 +84,7 @@ Starts uvicorn serving both the API and the compiled React app. `--open` (defaul
 - **Runtime:**
   - Edge to FloorNode pulses while speaking, glows amber while holding the floor, dims while idle
   - Scrollable conversation bubble list (last 5 messages, expandable)
-  - Floor-state chip: `speaking` / `waiting` / `requesting`
+  - Floor-state chip: `speaking` / `waiting` / `requesting` / `error` (retrying after 429/5xx) / `spawning` (mid-creation)
   - Kick button appears on hover
 - **Artifacts:** ImageCards, ArtifactCards, and MemoryCards spawn as small draggable cards anchored near the node
 
@@ -127,10 +127,11 @@ Single connection per session at `ws://host:port/ws/<session_id>`. Server sends 
 { "type": "memory_saved", "category": "decisions", "content": "...", "agent": "Alice" }  ← agent may be null (FloorManager-issued [REMEMBER])
 { "type": "agent_joined", "name": "Carol", "uri": "..." }
 { "type": "agent_kicked", "name": "Bob" }
+{ "type": "error",        "agent": "Alice", "message": "Rate limited", "retryable": true }
 { "type": "session_ended" }
 ```
 
-The server keeps a ring buffer of the last 200 events. On WebSocket reconnect, missed events are replayed so the canvas stays consistent after a brief disconnect.
+The server keeps the full event log for the session lifetime (events are small JSON objects; memory is not a concern at this scale). On WebSocket reconnect, all events since session start are replayed so the canvas recovers completely after a disconnect.
 
 ---
 
@@ -142,7 +143,7 @@ DELETE /session/stop
 POST   /session/agent/add          ← body: agent spec
 DELETE /session/agent/<name>       ← kick
 POST   /session/message            ← human utterance
-GET    /media/<path>               ← serve result/ files
+GET    /media/<path>               ← serve result/ files; path is jailed under result/ using _safe_resolve() (reused from coding_session_tools.py) to prevent traversal
 GET    /trace/live?session=<id>    ← serves trace.html in live mode
 ```
 
@@ -169,6 +170,34 @@ The change to `trace.html` / `renderer.py` is approximately 30 lines: a conditio
 | Send human message | HumanNode input + Send | `POST /session/message` |
 | Open trace fullscreen | ConversationNode button | Opens `trace.html?live=<id>` in new tab |
 | Drag artifact card | Direct drag on canvas | Client-side only |
+
+---
+
+## Session Lifecycle
+
+`_run_session()` is one-shot, so the bridge wraps it with a `reset()` path:
+
+1. **First Run** — bridge starts a fresh `FloorManager` + `MessageBus`, clears the event log, opens a new session directory under `result/`.
+2. **Stop** — `DELETE /session/stop` calls `FloorManager.stop()`, sends `session_ended` over WS, writes the final `trace.html`, then tears down the asyncio task.
+3. **Run again** — bridge creates a new `FloorManager` + `MessageBus` (new session ID, new `result/` dir). The canvas nodes stay in place; only their runtime state resets (bubbles cleared, chips back to `waiting`).
+
+This means multiple runs in one `ofp-playground canvas` process each produce independent session directories.
+
+---
+
+## Graceful Shutdown
+
+| Trigger | Behaviour |
+|---------|-----------|
+| Browser tab closed | Session continues headless (agent tasks keep running); canvas reconnects if the tab reopens |
+| Ctrl+C in terminal | SIGINT → `FloorManager.stop()` → `session_ended` WS event → final `trace.html` written → uvicorn exits |
+| Natural session end (`[TASK_COMPLETE]` / max turns) | `session_ended` event → canvas shows summary overlay → final `trace.html` written |
+
+---
+
+## Canvas Layout Persistence
+
+Node positions are saved to `localStorage` keyed by session config hash. When the same floor config is opened again (same agents, same policy), positions are restored automatically. New nodes that don't have a saved position are placed by the dagre auto-layout (radial arrangement around the FloorNode). This is purely client-side; no server involvement.
 
 ---
 
