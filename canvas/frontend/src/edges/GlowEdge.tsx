@@ -3,7 +3,6 @@ import { getBezierPath } from '@xyflow/react'
 import type { EdgeProps } from '@xyflow/react'
 import type { GlowEdgeData } from '../types'
 
-// Use default Edge type — avoids the Record<string,unknown> constraint issue
 export function GlowEdge({
   id,
   sourceX, sourceY, targetX, targetY,
@@ -15,6 +14,14 @@ export function GlowEdge({
   const color = edgeData?.color ?? '#2a3a4c'
   const active = edgeData?.active ?? false
   const dashed = edgeData?.dashed ?? false
+  const pulse = edgeData?.pulse ?? null
+
+  const PULSE_COLOR: Record<string, string> = {
+    amber: '#d4a843',
+    teal: '#00bcd4',
+    purple: '#8b5cf6',
+  }
+  const pulseColor = pulse ? PULSE_COLOR[pulse] : null
 
   return (
     <>
@@ -22,6 +29,14 @@ export function GlowEdge({
         @keyframes dashTravel {
           from { stroke-dashoffset: 300; }
           to   { stroke-dashoffset: 0;   }
+        }
+        @keyframes edgeBlinkAmber {
+          0%, 100% { opacity: 1; }
+          50%      { opacity: 0.2; }
+        }
+        @keyframes edgeFlash {
+          from { opacity: 1; }
+          to   { opacity: 0; }
         }
       `}</style>
 
@@ -31,14 +46,14 @@ export function GlowEdge({
         className="react-flow__edge-path"
         d={edgePath}
         style={{
-          stroke: color,
+          stroke: pulseColor ?? color,
           strokeWidth: active ? 2.5 : 1.5,
           strokeDasharray: dashed ? '5 4' : undefined,
           fill: 'none',
         }}
       />
 
-      {/* Animated glow overlay — only when active */}
+      {/* Active glow overlay (floor grant) */}
       {active && (
         <path
           d={edgePath}
@@ -49,6 +64,37 @@ export function GlowEdge({
             fill: 'none',
             filter: `drop-shadow(0 0 5px ${color})`,
             animation: 'dashTravel 1.0s linear infinite',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Pulse: amber (requestFloor) — dashed blink */}
+      {pulse === 'amber' && (
+        <path
+          d={edgePath}
+          style={{
+            stroke: '#d4a843',
+            strokeWidth: 2,
+            strokeDasharray: '6 5',
+            fill: 'none',
+            filter: 'drop-shadow(0 0 4px #d4a843)',
+            animation: 'edgeBlinkAmber 0.9s ease-in-out infinite',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Pulse: teal (yieldFloor) or purple (manifest) — solid flash fading out */}
+      {(pulse === 'teal' || pulse === 'purple') && pulseColor && (
+        <path
+          d={edgePath}
+          style={{
+            stroke: pulseColor,
+            strokeWidth: 3,
+            fill: 'none',
+            filter: `drop-shadow(0 0 6px ${pulseColor})`,
+            animation: 'edgeFlash 1.5s ease-out forwards',
             pointerEvents: 'none',
           }}
         />
