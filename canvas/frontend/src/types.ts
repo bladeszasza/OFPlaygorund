@@ -11,7 +11,10 @@ export type AgentProvider = 'anthropic' | 'openai' | 'google' | 'huggingface'
 
 export type SessionState = 'idle' | 'running' | 'stopped'
 
-export type AgentFloorState = 'speaking' | 'waiting' | 'requesting' | 'error' | 'spawning'
+export type AgentFloorState =
+  | 'speaking' | 'waiting' | 'requesting' | 'error' | 'spawning'
+  | 'yielding'   // transient ~1.5s: agent voluntarily yielded
+  | 'manifest'   // transient ~1.5s: agent published capabilities
 
 export type ArtifactKind = 'image' | 'code' | 'phase' | 'music'
 
@@ -21,6 +24,16 @@ export interface Message {
   text: string
   ts: number
   media?: { type: string; url: string } | null
+}
+
+export interface FloorEventEntry {
+  id: string
+  type: 'floor_grant' | 'floor_revoke' | 'floor_yield' | 'floor_request'
+       | 'utterance' | 'manifest_published'
+  agent: string
+  to?: string
+  preview?: string
+  ts: number
 }
 
 export interface FloorNodeData {
@@ -58,6 +71,7 @@ export interface ConversationNodeData {
   policy: string
   topic: string
   turnCount: number
+  eventLog: FloorEventEntry[]
 }
 
 export interface ArtifactNodeData {
@@ -73,6 +87,7 @@ export interface GlowEdgeData {
   active: boolean      // true while the target agent holds the floor
   color: string        // stroke color
   dashed: boolean      // true for artifact edges
+  pulse?: 'amber' | 'teal' | 'purple' | null
 }
 
 export interface ArtifactCardData {
@@ -95,6 +110,8 @@ export type WSEvent =
   | { type: 'floor_grant'; to: string }
   | { type: 'floor_revoke'; from: string }
   | { type: 'floor_request'; from: string }
+  | { type: 'floor_yield'; from: string }
+  | { type: 'manifest_published'; agent: string }
   | { type: 'artifact_saved'; slug: string; kind: string; agent: string; preview: string }
   | { type: 'image_saved'; agent: string; url: string }
   | { type: 'memory_saved'; category: string; content: string; agent: string | null }
