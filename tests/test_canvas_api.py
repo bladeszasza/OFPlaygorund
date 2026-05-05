@@ -99,7 +99,18 @@ async def test_agent_type_field_accepted_in_start(app) -> None:
                         "noHuman": True,
                         "agentType": "",
                     },
-                }
+                },
+                {
+                    "id": "agent-1",
+                    "type": "AgentNode",
+                    "data": {
+                        "provider": "anthropic",
+                        "name": "Writer",
+                        "system": "You are a writer.",
+                        "model": "",
+                        "agentType": "code-generation",
+                    },
+                },
             ],
             "edges": [],
         }

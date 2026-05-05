@@ -23,13 +23,13 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from canvas.backend.session_bridge import SessionBridge
-from ofp_playground.agents.registry import AgentRegistry
-from ofp_playground.bus.message_bus import MessageBus
-from ofp_playground.config.settings import Settings
-from ofp_playground.floor.manager import FloorManager
-from ofp_playground.floor.policy import FloorPolicy
-from ofp_playground.renderer.terminal import TerminalRenderer
+from canvas.backend.session_bridge import SessionBridge  # noqa: E402
+from ofp_playground.agents.registry import AgentRegistry  # noqa: E402
+from ofp_playground.bus.message_bus import MessageBus  # noqa: E402
+from ofp_playground.config.settings import Settings  # noqa: E402
+from ofp_playground.floor.manager import FloorManager  # noqa: E402
+from ofp_playground.floor.policy import FloorPolicy  # noqa: E402
+from ofp_playground.renderer.terminal import TerminalRenderer  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +215,16 @@ async def _run_canvas_session(
             )
 
         if spawn_tasks:
-            await asyncio.gather(*spawn_tasks, return_exceptions=True)
+            results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
+            errors = [r for r in results if isinstance(r, Exception)]
+            if errors:
+                await bridge.push_raw(
+                    {
+                        "type": "error",
+                        "message": f"Failed to spawn {len(errors)} agent(s); aborting session.",
+                    }
+                )
+                return
 
         # Human agent (WebHumanAgent queue-based, not stdin)
         if not no_human and human_nodes:
