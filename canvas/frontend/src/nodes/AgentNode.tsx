@@ -1,8 +1,37 @@
 // canvas/frontend/src/nodes/AgentNode.tsx
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { useCanvas } from '../context/CanvasContext'
 import type { AgentNodeData, AgentFloorState } from '../types'
+
+// Inject keyframe animation once
+const ANIM_ID = 'ofp-agent-pulse'
+if (typeof document !== 'undefined' && !document.getElementById(ANIM_ID)) {
+  const style = document.createElement('style')
+  style.id = ANIM_ID
+  style.textContent = `
+    @keyframes ofp-pulse {
+      0%, 100% { box-shadow: 0 0 10px var(--pulse-color, #38a16955); }
+      50%       { box-shadow: 0 0 28px var(--pulse-color, #38a169bb); }
+    }
+    @keyframes ofp-pulse-amber {
+      0%, 100% { box-shadow: 0 0 8px #d69e2e55; border-color: #d4a843; }
+      50%       { box-shadow: 0 0 22px #d69e2ebb; border-color: #f6ad55; }
+    }
+    @keyframes ofp-flash-teal {
+      from { box-shadow: 0 0 18px #00bcd4; border-color: #00bcd4; }
+      to   { box-shadow: 0 0 0px transparent; border-color: #2a3a4c; }
+    }
+    @keyframes ofp-flash-purple {
+      from { box-shadow: 0 0 18px #8b5cf6; border-color: #8b5cf6; }
+      to   { box-shadow: 0 0 0px transparent; border-color: #2a3a4c; }
+    }
+    @keyframes ofp-dot {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.2; }
+    }
+  `
+  document.head.appendChild(style)
+}
 
 const PROVIDER_COLOR: Record<string, string> = {
   anthropic: '#d4a843',
@@ -17,6 +46,8 @@ const STATE_COLOR: Record<AgentFloorState, string> = {
   requesting: '#d69e2e',
   error: '#e53e3e',
   spawning: '#805ad5',
+  yielding: '#00bcd4',
+  manifest: '#8b5cf6',
 }
 
 const STATE_LABEL: Record<AgentFloorState, string> = {
@@ -25,6 +56,8 @@ const STATE_LABEL: Record<AgentFloorState, string> = {
   requesting: '✋ requesting',
   error: '❌ error',
   spawning: '⚙ spawning',
+  yielding: '↩ yielding',
+  manifest: '📋 manifest',
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -40,11 +73,39 @@ export function AgentNode({ data }: { data: AgentNodeData }) {
   const { onKick } = useCanvas()
   const [hovered, setHovered] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const prevFloorState = useRef<AgentFloorState>(data.floorState)
+  const [lastMsgPreview, setLastMsgPreview] = useState<string | null>(null)
+
+  // Keep last message preview updated
+  useEffect(() => {
+    const last = data.messages[data.messages.length - 1]
+    if (last?.text) {
+      setLastMsgPreview(last.text.slice(0, 90) + (last.text.length > 90 ? '…' : ''))
+    }
+  }, [data.messages])
+
+  // Reset preview on new speaking turn
+  useEffect(() => {
+    if (data.floorState === 'speaking' && prevFloorState.current !== 'speaking') {
+      setLastMsgPreview(null)
+    }
+    prevFloorState.current = data.floorState
+  }, [data.floorState])
   const providerColor = PROVIDER_COLOR[data.provider] ?? '#58a6ff'
   const stateColor = STATE_COLOR[data.floorState] ?? '#4a5568'
   const isSpeaking = data.floorState === 'speaking'
   const isSpawning = data.floorState === 'spawning'
+  const isRequesting = data.floorState === 'requesting'
+  const isYielding = data.floorState === 'yielding'
+  const isManifest = data.floorState === 'manifest'
   const typeColor = data.agentType ? (TYPE_COLOR[data.agentType] ?? '#58a6ff') : null
+
+  const stateAnimStyle: React.CSSProperties =
+    isSpeaking  ? { ['--pulse-color' as string]: `${stateColor}88`, animation: 'ofp-pulse 1.6s ease-in-out infinite' } :
+    isRequesting? { animation: 'ofp-pulse-amber 1.4s ease-in-out infinite' } :
+    isYielding  ? { animation: 'ofp-flash-teal 1.5s ease-out forwards' } :
+    isManifest  ? { animation: 'ofp-flash-purple 1.5s ease-out forwards' } :
+    {}
 
   return (
     <div
@@ -56,9 +117,9 @@ export function AgentNode({ data }: { data: AgentNodeData }) {
         borderRadius: 10, padding: '12px 14px',
         minWidth: 220, maxWidth: 300,
         color: '#e6edf5', fontFamily: 'ui-sans-serif, system-ui, sans-serif', fontSize: 12,
-        position: 'relative', transition: 'border-color 0.2s, box-shadow 0.2s',
-        boxShadow: isSpeaking ? `0 0 18px ${stateColor}55` : undefined,
+        position: 'relative', transition: 'border-color 0.2s',
         opacity: isSpawning ? 0.6 : 1,
+        ...stateAnimStyle,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: providerColor }} />
@@ -82,15 +143,40 @@ export function AgentNode({ data }: { data: AgentNodeData }) {
         )}
         <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{data.name}</span>
         <span style={{
-          fontSize: 10, background: `${stateColor}22`, color: stateColor,
-          borderRadius: 4, padding: '1px 6px',
+          fontSize: 10, background: `${stateColor}33`, color: stateColor,
+          borderRadius: 4, padding: '2px 7px', fontWeight: 600,
+          border: `1px solid ${stateColor}55`,
+          display: 'flex', alignItems: 'center', gap: 3,
         }}>
+          {isSpeaking && (
+            <span style={{ display: 'inline-flex', gap: 2 }}>
+              {[0, 0.3, 0.6].map((delay) => (
+                <span key={delay} style={{
+                  width: 4, height: 4, borderRadius: '50%', background: stateColor,
+                  display: 'inline-block',
+                  animation: `ofp-dot 1.2s ease-in-out ${delay}s infinite`,
+                }} />
+              ))}
+            </span>
+          )}
           {STATE_LABEL[data.floorState]}
         </span>
       </div>
 
       {data.model && (
         <div style={{ color: '#93a4b8', fontSize: 10, marginBottom: 6 }}>{data.model}</div>
+      )}
+
+      {/* Last message preview — always visible, cleared at start of new turn */}
+      {lastMsgPreview && (
+        <div style={{
+          background: '#0d1520', border: '1px solid #2a3a4c',
+          borderRadius: 5, padding: '5px 8px', fontSize: 11,
+          color: '#93a4b8', lineHeight: 1.4, marginBottom: 6,
+          wordBreak: 'break-word',
+        }}>
+          {lastMsgPreview}
+        </div>
       )}
 
       {data.floorState === 'error' && data.errorMessage && (
