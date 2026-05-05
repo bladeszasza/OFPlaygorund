@@ -30,7 +30,7 @@ from ofp_playground.config.output import SessionOutputManager
 from ofp_playground.floor.history import ConversationHistory
 from ofp_playground.floor.policy import FloorController, FloorPolicy
 from ofp_playground.floor.sandbox_context import PHASES_DIRNAME, build_sandbox_context_note, sync_sandbox_context
-from ofp_playground.memory.artifact_store import ArtifactStore
+from ofp_playground.memory.artifact_store import ArtifactStore, _slugify as _artifact_slugify
 from ofp_playground.memory.store import MemoryStore
 from ofp_playground.models.artifact import Utterance
 from ofp_playground.renderer.terminal import TerminalRenderer
@@ -136,7 +136,9 @@ class FloorManager:
         self._skip_next_orchestrator_yield: bool = False  # absorb stale yieldFloor after breakout re-grant
         self._breakout_callback: Optional[callable] = None  # set externally for breakout sessions
         self._coding_session_callback: Optional[callable] = None  # set externally for coding sessions
+        self._on_artifact_saved: Optional[callable] = None  # set by canvas bridge
         self._pending_breakout_file = None  # Path to last breakout artifact — injected into next ASSIGN
+        self._breakout_artifact_count: int = 0  # sequential counter for breakout-beat-N slugs
         self._manuscript: list[str] = []  # accumulated accepted chunks (showrunner_driven)
         self._last_worker_text: str = ""  # most recent non-orchestrator utterance text
         self._last_worker_name: str = ""  # speaker name for the above
@@ -565,6 +567,62 @@ class FloorManager:
         else:
             await self._send(envelope)
 
+    def _save_character_memory_blocks(self, text: str, agent_name: str) -> None:
+        """Split ``=== CHARACTER MEMORY: Name ===`` blocks into individual artifacts.
+
+        When MemoryKeeper (or any agent) outputs multiple character memory blocks
+        delimited by ``=== CHARACTER MEMORY: Name ===`` … ``=== END ===``, this
+        method saves each block as a separate artifact with slug
+        ``character-memory-<name>`` so the orchestrator can call
+        ``read_artifact('character-memory-raphael')`` per character rather than
+        loading the entire MemoryKeeper output.
+        """
+        import re as _re
+
+        pattern = _re.compile(
+            r"===\s*CHARACTER MEMORY:\s*(.+?)\s*===\s*(.*?)\s*===\s*END\s*===",
+            _re.DOTALL | _re.IGNORECASE,
+        )
+        for m in pattern.finditer(text):
+            char_name = m.group(1).strip()
+            char_content = m.group(2).strip()
+            slug = "character-memory-" + _artifact_slugify(char_name)
+            artifact = self._artifact_store.save(
+                agent_name=agent_name,
+                content=char_content,
+                slug=slug,
+                summary=f"Character memory for {char_name}",
+            )
+            logger.debug("Saved per-character artifact: %s", slug)
+            if self._on_artifact_saved:
+                self._on_artifact_saved({
+                    "type": "artifact_saved",
+                    "slug": artifact.slug,
+                    "agent": agent_name,
+                    "kind": "phase",
+                    "preview": char_content[:120],
+                })
+
+    def _expand_artifact_refs_in_task(self, task: str) -> str:
+        """Replace ``read_artifact('slug')`` calls in a task string with actual content.
+
+        Workers (especially HuggingFace text agents) cannot call ``read_artifact``
+        as a tool.  Expanding the references inline ensures they receive the
+        actual artifact content without needing tool support.
+
+        References that cannot be resolved are left unchanged.
+        """
+        import re as _re
+
+        def _replace(m: _re.Match) -> str:
+            slug = m.group(1)
+            content = self._artifact_store.read(slug)
+            if content:
+                return f"\n\n--- ARTIFACT: {slug} ---\n{content}\n--- END ARTIFACT: {slug} ---"
+            return m.group(0)
+
+        return _re.sub(r"read_artifact\(['\"](.+?)['\"]\)", _replace, task)
+
     @staticmethod
     def _expand_truncated_assign(task: str, accepted_text: str) -> str:
         """Replace a truncated [ASSIGN] task with the full [ACCEPT]ed content.
@@ -775,6 +833,10 @@ class FloorManager:
                     # Build directive, injecting phase artifact index for local LLM agents.
                     # Remote agents receive the raw task — they don't maintain narrative context
                     # and echoing the full manuscript confuses their endpoint logic.
+                    # Expand any read_artifact('slug') references inline before
+                    # sending to workers — HF text agents have no tool support and
+                    # cannot call read_artifact() themselves.
+                    task = self._expand_artifact_refs_in_task(task)
                     directive = f"[DIRECTIVE for {target_name}]: {task}"
                     is_remote = "remote-" in target_uri
                     # Inject compact artifact index instead of the full manuscript.
@@ -870,23 +932,45 @@ class FloorManager:
                 ])
                 continue
 
-            # [ACCEPT]  — append last worker output to shared manuscript
-            if re.match(r"\[ACCEPT\]", line, re.IGNORECASE):
+            # [ACCEPT] / [ACCEPT prose] / [ACCEPT plan] / [ACCEPT image]
+            # - [ACCEPT] and [ACCEPT prose] → append to manuscript (backward compat)
+            # - [ACCEPT plan] / [ACCEPT image] → save artifact only; keep manuscript clean
+            m_accept = re.match(r"\[ACCEPT(?:\s+(prose|plan|image))?\]", line, re.IGNORECASE)
+            if m_accept:
+                accept_type = (m_accept.group(1) or "").lower()
+                add_to_manuscript = accept_type not in ("plan", "image")
                 self._orchestrator_idle_grants = 0
                 if self._last_worker_text:
                     self._last_accepted_text = self._last_worker_text
-                    self._manuscript.append(self._last_worker_text)
+                    if add_to_manuscript:
+                        self._manuscript.append(self._last_worker_text)
                     # Save as phase artifact for interlinked memory access
-                    self._artifact_store.save(
+                    _accepted_artifact = self._artifact_store.save(
                         agent_name=self._last_worker_name or "unknown",
                         content=self._last_worker_text,
+                    )
+                    if self._on_artifact_saved:
+                        self._on_artifact_saved({
+                            "type": "artifact_saved",
+                            "slug": _accepted_artifact.slug,
+                            "agent": self._last_worker_name or "unknown",
+                            "kind": "phase",
+                            "preview": self._last_worker_text[:120],
+                        })
+                    # Split out any === CHARACTER MEMORY: Name === blocks into
+                    # individual artifacts so the orchestrator can call
+                    # read_artifact('character-memory-<name>') per character.
+                    self._save_character_memory_blocks(
+                        self._last_worker_text,
+                        self._last_worker_name or "MemoryKeeper",
                     )
                     self._sync_sandbox_context()
                     self._last_worker_text = ""
                 if self._renderer:
                     word_count = sum(len(chunk.split()) for chunk in self._manuscript)
+                    label = f"prose" if add_to_manuscript else accept_type or "plan"
                     self._renderer.show_system_event(
-                        f"[Orchestrator] Accepted — manuscript: {word_count} words"
+                        f"[Orchestrator] Accepted ({label}) — manuscript: {word_count} words"
                     )
                 continue
 
@@ -1094,6 +1178,29 @@ class FloorManager:
         if isinstance(callback_result, tuple):
             compact_text, artifact_path = callback_result
             self._pending_breakout_file = artifact_path  # injected into next ASSIGN directive
+            # Also persist to ArtifactStore with a stable slug so agents can call
+            # read_artifact('breakout-beat-N') on retry (pending_breakout_file is single-use).
+            try:
+                self._breakout_artifact_count += 1
+                beat_slug = f"breakout-beat-{self._breakout_artifact_count}"
+                transcript_content = artifact_path.read_text(encoding="utf-8")
+                _breakout_artifact = self._artifact_store.save(
+                    agent_name="BreakoutSession",
+                    content=transcript_content,
+                    slug=beat_slug,
+                    summary=f"Breakout transcript for beat {self._breakout_artifact_count}: {topic[:80]}",
+                )
+                logger.debug("Breakout transcript saved to ArtifactStore as %s", beat_slug)
+                if self._on_artifact_saved:
+                    self._on_artifact_saved({
+                        "type": "artifact_saved",
+                        "slug": _breakout_artifact.slug,
+                        "agent": "BreakoutSession",
+                        "kind": "phase",
+                        "preview": transcript_content[:120],
+                    })
+            except Exception as e:
+                logger.warning("Could not save breakout transcript to ArtifactStore: %s", e)
         else:
             compact_text = callback_result
 

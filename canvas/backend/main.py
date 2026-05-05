@@ -172,6 +172,7 @@ async def _run_canvas_session(
 
     bus = MessageBus()
     floor = FloorManager(bus, policy=policy, renderer=renderer)
+    floor._on_artifact_saved = bridge.push_raw
 
     bridge.set_inner_collector(floor.trace_collector)
     bus.set_collector(bridge)
