@@ -16,13 +16,6 @@ export function GlowEdge({
   const dashed = edgeData?.dashed ?? false
   const pulse = edgeData?.pulse ?? null
 
-  const PULSE_COLOR: Record<string, string> = {
-    amber: '#d4a843',
-    teal: '#00bcd4',
-    purple: '#8b5cf6',
-  }
-  const pulseColor = pulse ? PULSE_COLOR[pulse] : null
-
   return (
     <>
       <style>{`
@@ -32,9 +25,13 @@ export function GlowEdge({
         }
         @keyframes edgeBlinkAmber {
           0%, 100% { opacity: 1; }
-          50%      { opacity: 0.2; }
+          50%      { opacity: 0.25; }
         }
-        @keyframes edgeFlash {
+        @keyframes ofp-edge-flash-teal {
+          from { opacity: 1; }
+          to   { opacity: 0; }
+        }
+        @keyframes ofp-edge-flash-purple {
           from { opacity: 1; }
           to   { opacity: 0; }
         }
@@ -46,7 +43,7 @@ export function GlowEdge({
         className="react-flow__edge-path"
         d={edgePath}
         style={{
-          stroke: pulseColor ?? color,
+          stroke: color,
           strokeWidth: active ? 2.5 : 1.5,
           strokeDasharray: dashed ? '5 4' : undefined,
           fill: 'none',
@@ -85,16 +82,31 @@ export function GlowEdge({
         />
       )}
 
-      {/* Pulse: teal (yieldFloor) or purple (manifest) — solid flash fading out */}
-      {(pulse === 'teal' || pulse === 'purple') && pulseColor && (
+      {/* Pulse: teal (yieldFloor) — solid teal flash fading out */}
+      {pulse === 'teal' && (
         <path
           d={edgePath}
           style={{
-            stroke: pulseColor,
+            stroke: '#00bcd4',
             strokeWidth: 3,
             fill: 'none',
-            filter: `drop-shadow(0 0 6px ${pulseColor})`,
-            animation: 'edgeFlash 1.5s ease-out forwards',
+            filter: 'drop-shadow(0 0 6px #00bcd4)',
+            animation: 'ofp-edge-flash-teal 1.5s ease-out forwards',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Pulse: purple (publishManifest) — solid purple flash fading out */}
+      {pulse === 'purple' && (
+        <path
+          d={edgePath}
+          style={{
+            stroke: '#8b5cf6',
+            strokeWidth: 3,
+            fill: 'none',
+            filter: 'drop-shadow(0 0 6px #8b5cf6)',
+            animation: 'ofp-edge-flash-purple 1.5s ease-out forwards',
             pointerEvents: 'none',
           }}
         />
