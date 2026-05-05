@@ -36,6 +36,7 @@ import { useSession } from './hooks/useSession'
 import type {
   FloorNodeData, AgentNodeData, HumanNodeData, ConversationNodeData,
   ArtifactNodeData, GlowEdgeData, WSEvent, FloorPolicy, AgentFloorState, Message,
+  FloorEventEntry,
 } from './types'
 
 // ── Stable module-level constants — never recreated on render ─────────────────
@@ -104,6 +105,27 @@ function glowEdge(
   }
 }
 
+function toFloorEntry(event: WSEvent): FloorEventEntry | null {
+  const id = `${Date.now()}-${Math.random()}`
+  const ts = Date.now()
+  switch (event.type) {
+    case 'floor_grant':
+      return { id, ts, type: 'floor_grant', agent: event.to, to: event.to }
+    case 'floor_revoke':
+      return { id, ts, type: 'floor_revoke', agent: event.from }
+    case 'floor_yield':
+      return { id, ts, type: 'floor_yield', agent: event.from }
+    case 'floor_request':
+      return { id, ts, type: 'floor_request', agent: event.from }
+    case 'utterance':
+      return { id, ts, type: 'utterance', agent: event.sender, preview: event.text.slice(0, 70) }
+    case 'manifest_published':
+      return { id, ts, type: 'manifest_published', agent: event.agent }
+    default:
+      return null
+  }
+}
+
 function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'LR', ranksep: 80, nodesep: 40 })
@@ -150,6 +172,7 @@ function makeInitialNodes(): Node[] {
         id: CONV_ID, type: 'ConversationNode', position: { x: 0, y: 0 },
         data: {
           sessionId: null, policy: '', topic: '', turnCount: 0,
+          eventLog: [],
         } satisfies ConversationNodeData,
       },
     ],
@@ -203,6 +226,22 @@ export default function App() {
 
   // ── WS event handler ────────────────────────────────────────────────────────
   const handleEvent = useCallback((event: WSEvent) => {
+    // Append to conversation event log for all renderable event types
+    const entry = toFloorEntry(event)
+    if (entry) {
+      setNodes(nds => nds.map(n => {
+        if (n.id !== CONV_ID) return n
+        const cd = asConv(n.data)
+        return {
+          ...n,
+          data: {
+            ...cd,
+            eventLog: [...cd.eventLog.slice(-199), entry],
+            turnCount: event.type === 'utterance' ? cd.turnCount + 1 : cd.turnCount,
+          },
+        }
+      }))
+    }
     switch (event.type) {
       case 'utterance': {
         const msg: Message = {
@@ -255,8 +294,9 @@ export default function App() {
         setEdges((eds) => eds.map((e) => ({
           ...e,
           data: {
-            ...(asGlowEdge(e.data)),
+            ...asGlowEdge(e.data),
             active: e.source === FLOOR_ID && e.target === targetAgentId,
+            pulse: null,   // clear any pending request pulse
           },
         })))
         break
@@ -274,12 +314,77 @@ export default function App() {
       }
 
       case 'floor_request': {
+        const targetAgentId = `agent-${event.from}`
         setNodes((nds) => nds.map((n) => {
           if (n.type !== 'AgentNode') return n
           const nd = asAgent(n.data)
-          if (nd.name === event.from) return { ...n, data: { ...nd, floorState: 'requesting' as AgentFloorState } }
-          return n
+          if (nd.name !== event.from) return n
+          return { ...n, data: { ...nd, floorState: 'requesting' as AgentFloorState } }
         }))
+        // pulse the edge amber while requesting
+        setEdges(eds => eds.map(e =>
+          e.source === FLOOR_ID && e.target === targetAgentId
+            ? { ...e, data: { ...asGlowEdge(e.data), pulse: 'amber' as const } }
+            : e
+        ))
+        break
+      }
+
+      case 'floor_yield': {
+        const targetAgentId = `agent-${event.from}`
+        setNodes(nds => nds.map(n => {
+          if (n.type !== 'AgentNode') return n
+          const nd = asAgent(n.data)
+          if (nd.name !== event.from) return n
+          return { ...n, data: { ...nd, floorState: 'yielding' as AgentFloorState } }
+        }))
+        setEdges(eds => eds.map(e =>
+          e.source === FLOOR_ID && e.target === targetAgentId
+            ? { ...e, data: { ...asGlowEdge(e.data), active: false, pulse: 'teal' as const } }
+            : e
+        ))
+        setTimeout(() => {
+          setNodes(nds => nds.map(n => {
+            if (n.type !== 'AgentNode') return n
+            const nd = asAgent(n.data)
+            if (nd.name !== event.from) return n
+            return { ...n, data: { ...nd, floorState: 'waiting' as AgentFloorState } }
+          }))
+          setEdges(eds => eds.map(e =>
+            e.source === FLOOR_ID && e.target === targetAgentId
+              ? { ...e, data: { ...asGlowEdge(e.data), pulse: null } }
+              : e
+          ))
+        }, 1500)
+        break
+      }
+
+      case 'manifest_published': {
+        const targetAgentId = `agent-${event.agent}`
+        setNodes(nds => nds.map(n => {
+          if (n.type !== 'AgentNode') return n
+          const nd = asAgent(n.data)
+          if (nd.name !== event.agent) return n
+          return { ...n, data: { ...nd, floorState: 'manifest' as AgentFloorState } }
+        }))
+        setEdges(eds => eds.map(e =>
+          e.source === FLOOR_ID && e.target === targetAgentId
+            ? { ...e, data: { ...asGlowEdge(e.data), pulse: 'purple' as const } }
+            : e
+        ))
+        setTimeout(() => {
+          setNodes(nds => nds.map(n => {
+            if (n.type !== 'AgentNode') return n
+            const nd = asAgent(n.data)
+            if (nd.name !== event.agent) return n
+            return { ...n, data: { ...nd, floorState: 'waiting' as AgentFloorState } }
+          }))
+          setEdges(eds => eds.map(e =>
+            e.source === FLOOR_ID && e.target === targetAgentId
+              ? { ...e, data: { ...asGlowEdge(e.data), pulse: null } }
+              : e
+          ))
+        }, 1500)
         break
       }
 
