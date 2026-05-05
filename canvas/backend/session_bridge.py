@@ -100,7 +100,7 @@ def _serialize_envelope(
         if event_type == "requestFloor":
             return {"type": "floor_request", "from": sender_name, "from_uri": sender_uri}
 
-        if event_type == "publishManifest":
+        if event_type in ("publishManifest", "publishManifests"):
             return {"type": "manifest_published", "agent": sender_name, "agent_uri": sender_uri}
 
         if event_type == "yieldFloor":
@@ -180,21 +180,7 @@ class SessionBridge:
 
         event = _serialize_envelope(envelope, self._agent_names)
         if event is None:
-            # Debug: log floor events that are unexpectedly dropped
-            for ev in (envelope.events or []):
-                et = getattr(ev, "eventType", type(ev).__name__)
-                if et in ("grantFloor", "revokeFloor", "requestFloor", "yieldFloor"):
-                    logger.warning(
-                        "FLOOR DROPPED: et=%r to=%r agents=%r",
-                        et,
-                        getattr(getattr(ev, "to", None), "speakerUri", None),
-                        list(self._agent_names.keys()),
-                    )
             return
-
-        # Debug: log floor events that ARE pushed to WS
-        if event.get("type") in ("floor_grant", "floor_revoke", "floor_request"):
-            logger.info("FLOOR PUSHED: %r", event)
 
         self._event_log.append(event)
         self._queue.put_nowait(event)
