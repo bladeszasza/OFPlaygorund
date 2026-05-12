@@ -1,0 +1,1495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OFP Canvas — Developer Reference</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<style>
+:root{
+  --bg:#0f1720;--panel:#17222d;--panel2:#101923;--panel3:#0d141d;
+  --muted:#93a4b8;--text:#e6edf5;--accent:#58a6ff;--grid:#2a3a4c;
+  --border:#223244;--shadow:0 8px 32px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px}
+a{color:var(--accent);text-decoration:none}
+
+/* ── layout ── */
+.shell{display:grid;grid-template-columns:220px 1fr;height:100vh;overflow:hidden}
+.sidebar{background:#111b26;border-right:1px solid var(--border);overflow-y:auto;padding:16px 0}
+.main{overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:28px}
+
+/* ── sidebar ── */
+.sidebar-logo{padding:0 16px 12px;font-size:14px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border)}
+.sidebar-section{padding:10px 16px 4px;font-size:10px;font-weight:700;color:#4a6070;text-transform:uppercase;letter-spacing:.08em}
+.sidebar a{display:block;padding:5px 16px;font-size:12px;color:var(--muted);transition:color .15s,background .15s;border-left:2px solid transparent}
+.sidebar a:hover{color:var(--text);background:#1a2a3a}
+.sidebar a.active{color:var(--accent);border-left-color:var(--accent);background:#1a2a3a22}
+
+/* ── section headers ── */
+.section-head{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:20px}
+.section-head h2{font-size:20px;font-weight:700;color:var(--text)}
+.section-head p{color:var(--muted);font-size:12px;margin-top:4px}
+
+/* ── cards ── */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+.card-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.card-head h3{font-size:14px;font-weight:700}
+.card-body{padding:16px}
+.card-split{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.card-split .pane{padding:16px}
+.card-split .pane+.pane{border-left:1px solid var(--border)}
+
+/* ── tags ── */
+.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.tag-event{background:#1a3a5a;color:#58a6ff;border:1px solid #2a5580}
+.tag-node{background:#1a3a20;color:#68d391;border:1px solid #2a5530}
+.tag-edge{background:#2a1a3a;color:#c4b5fd;border:1px solid #4a2a6a}
+.tag-api{background:#3a2a1a;color:#fbd38d;border:1px solid #6a4a2a}
+.filepath{font-size:10px;color:#4a6a90;font-family:monospace;background:#0d1520;padding:2px 8px;border-radius:4px;border:1px solid #1a2a3a}
+
+/* ── payload box ── */
+.payload{background:#0d1520;border:1px solid var(--grid);border-radius:8px;padding:10px 12px;font-family:monospace;font-size:11px;color:#90cdf4;line-height:1.6;white-space:pre}
+
+/* ── code block ── */
+.code-block{background:#0d1117;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.code-block-header{padding:6px 12px;font-size:10px;color:var(--muted);background:#111b22;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.code-block pre{margin:0;padding:12px;font-size:11px;overflow-x:auto;max-height:300px}
+.code-block code.hljs{background:transparent!important;padding:0!important}
+
+/* ── canvas node mockups ── */
+.mock-node{border-radius:10px;padding:12px 14px;font-size:12px;color:#e6edf5;font-family:ui-sans-serif,system-ui,sans-serif;position:relative;transition:border-color .2s}
+.mock-edge-wrap{padding:20px 0;display:flex;align-items:center;justify-content:center}
+
+/* ── agent states ── */
+@keyframes ofp-pulse{0%,100%{box-shadow:0 0 10px var(--pc,#38a16955)}50%{box-shadow:0 0 28px var(--pc,#38a169bb)}}
+@keyframes ofp-pulse-amber{0%,100%{box-shadow:0 0 8px #d69e2e55;border-color:#d4a843}50%{box-shadow:0 0 22px #d69e2ebb;border-color:#f6ad55}}
+@keyframes ofp-flash-teal{from{box-shadow:0 0 18px #00bcd4;border-color:#00bcd4}to{box-shadow:0 0 0 transparent;border-color:#2a3a4c}}
+@keyframes ofp-flash-purple{from{box-shadow:0 0 18px #8b5cf6;border-color:#8b5cf6}to{box-shadow:0 0 0 transparent;border-color:#2a3a4c}}
+@keyframes ofp-dot{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes ofp-spawning{0%,100%{opacity:.4}50%{opacity:.8}}
+
+/* ── edge animations ── */
+@keyframes dashTravel{from{stroke-dashoffset:300}to{stroke-dashoffset:0}}
+@keyframes edgeBlinkAmber{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes ofp-edge-flash-teal{from{opacity:1}to{opacity:0}}
+@keyframes ofp-edge-flash-purple{from{opacity:1}to{opacity:0}}
+
+/* ── simulate button ── */
+.sim-btn{background:#1a2a3a;color:#58a6ff;border:1px solid #2a4a6a;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit;transition:background .15s}
+.sim-btn:hover{background:#1e3347}
+
+/* ── grid helpers ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.flex-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.gap-8{gap:8px}
+
+/* ── table ── */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 10px;color:var(--muted);border-bottom:1px solid var(--border);font-weight:600;font-size:11px}
+td{padding:7px 10px;border-bottom:1px solid #1a2a3a;vertical-align:top}
+tr:last-child td{border-bottom:none}
+td code{font-family:monospace;background:#0d1520;padding:1px 5px;border-radius:3px;font-size:11px;color:#90cdf4}
+
+/* ── color swatch ── */
+.swatch{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;background:#0d1520;border:1px solid var(--border)}
+.swatch-dot{width:18px;height:18px;border-radius:4px;flex-shrink:0}
+.swatch-name{font-weight:600;font-size:12px}
+.swatch-hex{font-family:monospace;font-size:11px;color:var(--muted)}
+.swatch-use{font-size:10px;color:#4a6070;margin-top:1px}
+
+/* ── state demo ── */
+.state-row{display:flex;gap:10px;flex-wrap:wrap}
+.state-chip{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── SIDEBAR ── -->
+<nav class="sidebar">
+  <div class="sidebar-logo">OFP Canvas Reference</div>
+  <div class="sidebar-section">Overview</div>
+  <a href="#architecture">Architecture</a>
+  <div class="sidebar-section">Events (14)</div>
+  <a href="#ev-utterance">utterance</a>
+  <a href="#ev-floor_grant">floor_grant</a>
+  <a href="#ev-floor_revoke">floor_revoke</a>
+  <a href="#ev-floor_request">floor_request</a>
+  <a href="#ev-floor_yield">floor_yield</a>
+  <a href="#ev-manifest_published">manifest_published</a>
+  <a href="#ev-artifact_saved">artifact_saved</a>
+  <a href="#ev-image_saved">image_saved</a>
+  <a href="#ev-memory_saved">memory_saved</a>
+  <a href="#ev-agent_spawning">agent_spawning</a>
+  <a href="#ev-agent_joined">agent_joined</a>
+  <a href="#ev-agent_kicked">agent_kicked</a>
+  <a href="#ev-error">error</a>
+  <a href="#ev-session_ended">session_ended</a>
+  <div class="sidebar-section">Nodes (8)</div>
+  <a href="#node-floor">FloorNode</a>
+  <a href="#node-agent">AgentNode</a>
+  <a href="#node-human">HumanNode</a>
+  <a href="#node-conversation">ConversationNode</a>
+  <a href="#node-image">ImageArtifactNode</a>
+  <a href="#node-code">CodeArtifactNode</a>
+  <a href="#node-phase">PhaseArtifactNode</a>
+  <a href="#node-music">MusicArtifactNode</a>
+  <div class="sidebar-section">Edges</div>
+  <a href="#glow-edge">GlowEdge States</a>
+  <div class="sidebar-section">Backend</div>
+  <a href="#api">REST + WebSocket API</a>
+  <div class="sidebar-section">Design System</div>
+  <a href="#colors">Colors &amp; Animations</a>
+</nav>
+
+<!-- ── MAIN ── -->
+<main class="main">
+
+<!-- ════════════════════════════════════════════════════════ ARCHITECTURE -->
+<section id="architecture">
+  <div class="section-head">
+    <h2>Canvas Architecture</h2>
+    <p>How the visual floor builder connects to the OFP runtime.</p>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <div style="display:flex;gap:0;align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 0">
+        <!-- arch diagram -->
+        <div style="text-align:center">
+          <div style="background:#1a2a3a;border:2px solid #58a6ff;border-radius:8px;padding:10px 18px;font-weight:700;color:#58a6ff">ReactFlow Canvas<br><small style="font-weight:400;color:var(--muted);font-size:10px">App.tsx + Node/Edge components</small></div>
+        </div>
+        <div style="padding:0 12px;color:var(--muted)">⟺ WS</div>
+        <div style="text-align:center">
+          <div style="background:#1a2a1a;border:2px solid #38a169;border-radius:8px;padding:10px 18px;font-weight:700;color:#68d391">SessionBridge<br><small style="font-weight:400;color:var(--muted);font-size:10px">canvas/backend/session_bridge.py</small></div>
+        </div>
+        <div style="padding:0 12px;color:var(--muted)">→</div>
+        <div style="text-align:center">
+          <div style="background:#1a1a2a;border:2px solid #8b5cf6;border-radius:8px;padding:10px 18px;font-weight:700;color:#c4b5fd">MessageBus<br><small style="font-weight:400;color:var(--muted);font-size:10px">bus/message_bus.py</small></div>
+        </div>
+        <div style="padding:0 12px;color:var(--muted)">→</div>
+        <div style="text-align:center">
+          <div style="background:#2a1a1a;border:2px solid #f97316;border-radius:8px;padding:10px 18px;font-weight:700;color:#fbd38d">FloorManager<br><small style="font-weight:400;color:var(--muted);font-size:10px">floor/manager.py</small></div>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div style="background:#0d1520;border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div style="color:#58a6ff;font-weight:700;font-size:11px;margin-bottom:6px">Frontend entry point</div>
+          <div style="color:var(--muted);font-size:11px;line-height:1.6">canvas/frontend/src/App.tsx<br>ReactFlow + 8 node types + GlowEdge.<br>All WS events handled in <code style="color:#90cdf4">handleEvent()</code>.</div>
+        </div>
+        <div style="background:#0d1520;border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div style="color:#68d391;font-weight:700;font-size:11px;margin-bottom:6px">Backend entry point</div>
+          <div style="color:var(--muted);font-size:11px;line-height:1.6">canvas/backend/main.py<br><code style="color:#90cdf4">build_app()</code> returns FastAPI app.<br>Serves static frontend + REST + WS.</div>
+        </div>
+        <div style="background:#0d1520;border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div style="color:#c4b5fd;font-weight:700;font-size:11px;margin-bottom:6px">Event bridge</div>
+          <div style="color:var(--muted);font-size:11px;line-height:1.6">SessionBridge.record() converts OFP envelopes → JSON events → WebSocket fan-out. Late clients get full event_log replay.</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;background:#0d1520;border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div style="color:var(--muted);font-size:11px;margin-bottom:6px;font-weight:700">Session lifecycle</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">
+          <span style="color:#68d391">POST /session/start</span><span style="color:var(--muted)">→</span>
+          <span style="color:#58a6ff">WS /ws/{session_id}</span><span style="color:var(--muted)">→</span>
+          <span style="color:#fbd38d">events stream</span><span style="color:var(--muted)">→</span>
+          <span style="color:#fc8181">DELETE /session/stop</span><span style="color:var(--muted)">→</span>
+          <span style="color:#c4b5fd">session_ended event</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ EVENTS -->
+<section id="events">
+  <div class="section-head">
+    <h2>WebSocket Event Catalog</h2>
+    <p>All 14 event types emitted by SessionBridge. Each shows: payload shape · visual effect · handler code from App.tsx.</p>
+  </div>
+
+  <!-- utterance -->
+  <div class="card" id="ev-utterance" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span>
+      <h3>utterance</h3>
+      <span class="filepath">canvas/backend/session_bridge.py · App.tsx handleEvent</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div style="margin-bottom:12px;font-size:11px;color:var(--muted)">Payload</div>
+        <div class="payload">{ "type": "utterance",
+  "sender": "Alice",
+  "sender_uri": "tag:ofp-playground.local,2025:llm-Alice",
+  "text": "Here is my response…",
+  "media": null
+  // media: { "type": "image", "url": "/media/…" }
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--muted);margin-bottom:6px">Visual effect</div>
+        <div style="font-size:11px;color:var(--text);line-height:1.7">
+          • Appends <code style="color:#90cdf4">Message</code> to the matching AgentNode or HumanNode<br>
+          • Updates ConversationNode eventLog (preview of first 70 chars)<br>
+          • Increments <code style="color:#90cdf4">turnCount</code><br>
+          • If <code style="color:#90cdf4">media.type === "image"</code> → spawns an ImageArtifactNode
+        </div>
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Demo — agent with message</div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #38a169;min-width:220px;max-width:300px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#38a16933;color:#38a169;border-radius:4px;padding:2px 7px;font-weight:600;border:1px solid #38a16955">
+                <span style="display:inline-flex;gap:2px">
+                  <span style="width:4px;height:4px;border-radius:50%;background:#38a169;display:inline-block;animation:ofp-dot 1.2s ease-in-out 0s infinite"></span>
+                  <span style="width:4px;height:4px;border-radius:50%;background:#38a169;display:inline-block;animation:ofp-dot 1.2s ease-in-out .3s infinite"></span>
+                  <span style="width:4px;height:4px;border-radius:50%;background:#38a169;display:inline-block;animation:ofp-dot 1.2s ease-in-out .6s infinite"></span>
+                </span>
+                speaking
+              </span>
+            </div>
+            <div style="background:#0d1520;border:1px solid #2a3a4c;border-radius:5px;padding:5px 8px;font-size:11px;color:#93a4b8;line-height:1.4">Here is my response to your question about…</div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx — handleEvent case</span><span class="filepath">src/App.tsx</span></div>
+          <pre><code class="language-typescript">case 'utterance': {
+  const msg: Message = {
+    id: `${Date.now()}-${Math.random()}`,
+    sender: event.sender, text: event.text,
+    ts: Date.now(), media: event.media,
+  }
+  setNodes(nds => nds.map(n => {
+    if (n.type === 'AgentNode' && asAgent(n.data).name === event.sender)
+      return { ...n, data: { ...n.data, messages: [...n.data.messages, msg] } }
+    if (n.type === 'HumanNode' && asHuman(n.data).humanName === event.sender)
+      return { ...n, data: { ...n.data, messages: [...n.data.messages, msg] } }
+    return n
+  }))
+  // Image utterance → ImageArtifactNode
+  if (event.media?.type === 'image') {
+    const artifactId = `artifact-img-${Date.now()}`
+    setNodes(nds => [...nds, {
+      id: artifactId, type: 'ImageArtifactNode',
+      position: nextArtifactPosition(nds, `agent-${event.sender}`),
+      data: { kind: 'image', agentName: event.sender,
+              label: 'image', preview: event.media!.url, url: event.media!.url },
+    }])
+    setEdges(eds => [...eds, glowEdge(
+      `e-agent-${event.sender}-${artifactId}`,
+      `agent-${event.sender}`, artifactId,
+      { color: '#8b5cf6', dashed: true },
+    )])
+  }
+  break
+}</code></pre>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>session_bridge.py — serializer</span></div>
+          <pre><code class="language-typescript">if event_type == "utterance":
+    text = " ".join(token.value for token in text_tokens)
+    for key in ("image","video","audio","3d"):
+        feature = features.get(key)
+        tokens = getattr(feature,"tokens",None) or []
+        if tokens:
+            url = _to_media_url(tokens[0].value)
+            media = {"type": key, "url": url}
+            break
+    return {"type":"utterance","sender":sender_name,
+            "sender_uri":sender_uri,"text":text,"media":media}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- floor_grant -->
+  <div class="card" id="ev-floor_grant" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span>
+      <h3>floor_grant</h3>
+      <span class="filepath">OFP grantFloor → SessionBridge → canvas</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "floor_grant",
+  "to": "Alice",
+  "to_uri": "tag:ofp-playground.local,2025:llm-Alice"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Sets target agent <code style="color:#90cdf4">floorState = 'speaking'</code> → green pulse animation<br>
+          • Sets all other agents to <code style="color:#90cdf4">'waiting'</code><br>
+          • Activates the Floor→Agent GlowEdge (animated dash travel)<br>
+          • Clears any pending <code style="color:#90cdf4">pulse</code> on that edge
+        </div>
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Speaking state</div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #38a169;min-width:220px;max-width:280px;--pc:#38a16988;animation:ofp-pulse 1.6s ease-in-out infinite">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#38a16933;color:#38a169;border-radius:4px;padding:2px 7px;border:1px solid #38a16955">🎙 speaking</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx handler</span></div>
+          <pre><code class="language-typescript">case 'floor_grant': {
+  setNodes(nds => nds.map(n => {
+    if (n.type !== 'AgentNode') return n
+    const nd = asAgent(n.data)
+    const state: AgentFloorState =
+      nd.name === event.to ? 'speaking' : 'waiting'
+    return { ...n, data: { ...nd, floorState: state } }
+  }))
+  const targetId = `agent-${event.to}`
+  setEdges(eds => eds.map(e => ({
+    ...e,
+    data: {
+      ...asGlowEdge(e.data),
+      active: e.source === FLOOR_ID && e.target === targetId,
+      pulse: null,  // clear pending request pulse
+    },
+  })))
+  break
+}</code></pre>
+        </div>
+        <div style="margin-top:10px;background:#0d1520;border:1px solid var(--border);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px">GlowEdge active state (animated dash)</div>
+          <svg width="200" height="40" viewBox="0 0 200 40">
+            <path d="M10,20 C60,20 140,20 190,20" stroke="#2a3a4c" stroke-width="1.5" fill="none"/>
+            <path d="M10,20 C60,20 140,20 190,20" stroke="#38a169" stroke-width="2.5" fill="none"/>
+            <path d="M10,20 C60,20 140,20 190,20" stroke="#38a169" stroke-width="3" stroke-dasharray="10 8" fill="none" filter="url(#glow-green)" style="animation:dashTravel 1.0s linear infinite"/>
+            <defs><filter id="glow-green"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- floor_revoke -->
+  <div class="card" id="ev-floor_revoke" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span><h3>floor_revoke</h3>
+      <span class="filepath">OFP revokeFloor → SessionBridge</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "floor_revoke",
+  "from": "Alice",
+  "from_uri": "tag:ofp-playground.local,2025:llm-Alice"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Sets named agent <code style="color:#90cdf4">floorState = 'waiting'</code><br>
+          • Sets all GlowEdges <code style="color:#90cdf4">active = false</code> (dash animation stops)
+        </div>
+        <div style="margin-top:12px">
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #4a5568;min-width:220px;max-width:280px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#4a556833;color:#4a5568;border-radius:4px;padding:2px 7px;border:1px solid #4a556855">⏳ waiting</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx handler</span></div>
+          <pre><code class="language-typescript">case 'floor_revoke': {
+  setNodes(nds => nds.map(n => {
+    if (n.type !== 'AgentNode') return n
+    const nd = asAgent(n.data)
+    if (nd.name === event.from)
+      return { ...n, data: { ...nd, floorState: 'waiting' } }
+    return n
+  }))
+  setEdges(eds => eds.map(e => ({
+    ...e, data: { ...asGlowEdge(e.data), active: false }
+  })))
+  break
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- floor_request -->
+  <div class="card" id="ev-floor_request" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span><h3>floor_request</h3>
+      <span class="filepath">OFP requestFloor → amber pulse</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "floor_request",
+  "from": "Bob",
+  "from_uri": "tag:ofp-playground.local,2025:llm-Bob"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Sets agent <code style="color:#90cdf4">floorState = 'requesting'</code><br>
+          • Pulses the Floor→Agent edge <strong style="color:#d4a843">amber</strong> (blinking dashed overlay)<br>
+          • Amber = agent is raising hand, waiting for grant
+        </div>
+        <div style="margin-top:12px">
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #d4a843;min-width:220px;max-width:280px;animation:ofp-pulse-amber 1.4s ease-in-out infinite">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">OPENAI</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Bob</span>
+              <span style="font-size:10px;background:#d69e2e33;color:#d69e2e;border-radius:4px;padding:2px 7px;border:1px solid #d69e2e55">✋ requesting</span>
+            </div>
+          </div>
+          <div style="margin-top:8px">
+            <svg width="200" height="40" viewBox="0 0 200 40">
+              <path d="M10,20 C60,20 140,20 190,20" stroke="#2a3a4c" stroke-width="1.5" fill="none"/>
+              <path d="M10,20 C60,20 140,20 190,20" stroke="#d4a843" stroke-width="2" stroke-dasharray="6 5" fill="none" style="animation:edgeBlinkAmber 0.9s ease-in-out infinite;filter:drop-shadow(0 0 4px #d4a843)"/>
+            </svg>
+            <div style="font-size:10px;color:var(--muted)">Amber blinking edge (floor_request)</div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx handler</span></div>
+          <pre><code class="language-typescript">case 'floor_request': {
+  const targetId = `agent-${event.from}`
+  setNodes(nds => nds.map(n => {
+    if (n.type !== 'AgentNode') return n
+    const nd = asAgent(n.data)
+    if (nd.name !== event.from) return n
+    return { ...n, data: { ...nd, floorState: 'requesting' } }
+  }))
+  setEdges(eds => eds.map(e =>
+    e.source === FLOOR_ID && e.target === targetId
+      ? { ...e, data: { ...asGlowEdge(e.data), pulse: 'amber' } }
+      : e
+  ))
+  break
+}</code></pre>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>GlowEdge.tsx — amber pulse path</span></div>
+          <pre><code class="language-typescript">// GlowEdge renders this when pulse === 'amber'
+{pulse === 'amber' && (
+  &lt;path d={edgePath} style={{
+    stroke: '#d4a843', strokeWidth: 2,
+    strokeDasharray: '6 5', fill: 'none',
+    filter: 'drop-shadow(0 0 4px #d4a843)',
+    animation: 'edgeBlinkAmber 0.9s ease-in-out infinite',
+  }} />
+)}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- floor_yield -->
+  <div class="card" id="ev-floor_yield" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span><h3>floor_yield</h3>
+      <span class="filepath">OFP yieldFloor → teal flash → auto-reverts after 1.5s</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "floor_yield",
+  "from": "Alice",
+  "from_uri": "tag:ofp-playground.local,2025:llm-Alice"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Transient state (1.5 s): <code style="color:#90cdf4">floorState = 'yielding'</code><br>
+          • Edge pulses <strong style="color:#00bcd4">teal</strong> (solid flash fading out)<br>
+          • After 1.5 s: reverts to <code style="color:#90cdf4">'waiting'</code>, edge pulse cleared<br>
+          • Signals agent voluntarily handed back the floor
+        </div>
+        <div style="margin-top:12px" id="yield-demo">
+          <button class="sim-btn" onclick="simulateYield()">Simulate floor_yield</button>
+          <div id="yield-node" class="mock-node" style="margin-top:8px;background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #4a5568;min-width:220px;max-width:280px;transition:border-color .3s">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Alice</span>
+              <span id="yield-badge" style="font-size:10px;background:#4a556833;color:#4a5568;border-radius:4px;padding:2px 7px;border:1px solid #4a556855">⏳ waiting</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx handler</span></div>
+          <pre><code class="language-typescript">case 'floor_yield': {
+  const targetId = `agent-${event.from}`
+  setNodes(nds => nds.map(n => {
+    if (n.type !== 'AgentNode') return n
+    const nd = asAgent(n.data)
+    if (nd.name !== event.from) return n
+    return { ...n, data: { ...nd, floorState: 'yielding' } }
+  }))
+  setEdges(eds => eds.map(e =>
+    e.source === FLOOR_ID && e.target === targetId
+      ? { ...e, data: { ...asGlowEdge(e.data), active: false, pulse: 'teal' } }
+      : e
+  ))
+  setTimeout(() => {
+    // revert after 1500ms
+    setNodes(/* floorState = 'waiting' */)
+    setEdges(/* pulse = null */)
+  }, 1500)
+  break
+}</code></pre>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>AgentNode.tsx — yielding animation</span></div>
+          <pre><code class="language-typescript">// CSS keyframe (injected once at module level)
+@keyframes ofp-flash-teal {
+  from { box-shadow: 0 0 18px #00bcd4; border-color: #00bcd4; }
+  to   { box-shadow: 0 0 0px transparent; border-color: #2a3a4c; }
+}
+
+// Applied when floorState === 'yielding'
+isYielding ? { animation: 'ofp-flash-teal 1.5s ease-out forwards' } : {}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- manifest_published -->
+  <div class="card" id="ev-manifest_published" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span><h3>manifest_published</h3>
+      <span class="filepath">OFP publishManifest → purple flash → auto-reverts 1.5s</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "manifest_published",
+  "agent": "Alice",
+  "agent_uri": "tag:ofp-playground.local,2025:llm-Alice"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Transient state (1.5 s): <code style="color:#90cdf4">floorState = 'manifest'</code><br>
+          • Edge pulses <strong style="color:#8b5cf6">purple</strong> (solid flash fading out)<br>
+          • After 1.5 s: reverts to <code style="color:#90cdf4">'waiting'</code><br>
+          • Fired when agent calls <code style="color:#90cdf4">_publish_manifest()</code> on join
+        </div>
+        <div style="margin-top:12px">
+          <div id="manifest-node" class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #8b5cf6;min-width:220px;max-width:280px;animation:ofp-flash-purple 1.5s ease-out forwards">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:13px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#8b5cf633;color:#8b5cf6;border-radius:4px;padding:2px 7px;border:1px solid #8b5cf655">📋 manifest</span>
+            </div>
+          </div>
+          <button class="sim-btn" style="margin-top:8px" onclick="simulateManifest()">Simulate manifest_published</button>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>AgentNode.tsx — manifest animation</span></div>
+          <pre><code class="language-typescript">@keyframes ofp-flash-purple {
+  from { box-shadow: 0 0 18px #8b5cf6; border-color: #8b5cf6; }
+  to   { box-shadow: 0 0 0px transparent; border-color: #2a3a4c; }
+}
+
+const STATE_COLOR: Record&lt;AgentFloorState, string&gt; = {
+  speaking:  '#38a169',
+  waiting:   '#4a5568',
+  requesting:'#d69e2e',
+  error:     '#e53e3e',
+  spawning:  '#805ad5',
+  yielding:  '#00bcd4',
+  manifest:  '#8b5cf6',   // ← purple
+}
+
+// GlowEdge purple pulse path
+{pulse === 'purple' && (
+  &lt;path d={edgePath} style={{
+    stroke: '#8b5cf6', strokeWidth: 3, fill: 'none',
+    filter: 'drop-shadow(0 0 6px #8b5cf6)',
+    animation: 'ofp-edge-flash-purple 1.5s ease-out forwards',
+  }} />
+)}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- artifact_saved -->
+  <div class="card" id="ev-artifact_saved" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-event">WS Event</span><h3>artifact_saved</h3>
+      <span class="filepath">FloorManager._on_artifact_saved → new artifact node in graph</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "artifact_saved",
+  "slug": "beat-01-prose",
+  "kind": "phase",   // or "code" | "music"
+  "agent": "Novelist",
+  "preview": "Chapter 1: The fog rolled in…"
+}</div>
+        <div style="margin-top:12px;font-size:11px;color:var(--text);line-height:1.7">
+          • Creates a new ReactFlow node of type determined by <code style="color:#90cdf4">artifactNodeType(kind)</code><br>
+          • <code style="color:#58a6ff">phase/markdown</code> → PhaseArtifactNode<br>
+          • <code style="color:#10a37f">code/file</code> → CodeArtifactNode<br>
+          • <code style="color:#f97316">music</code> → MusicArtifactNode<br>
+          • Adds a dashed GlowEdge from producing AgentNode<br>
+          • Position: right of agent, staggered vertically per count
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>App.tsx — artifact routing</span></div>
+          <pre><code class="language-typescript">function artifactNodeType(kind: string): string {
+  if (kind === 'image') return 'ImageArtifactNode'
+  if (kind === 'code' || kind === 'file') return 'CodeArtifactNode'
+  if (kind === 'music') return 'MusicArtifactNode'
+  return 'PhaseArtifactNode'
+}
+
+const ARTIFACT_COLOR: Record&lt;string, string&gt; = {
+  image:    '#8b5cf6',
+  code:     '#10a37f',
+  file:     '#10a37f',
+  phase:    '#58a6ff',
+  markdown: '#58a6ff',
+  music:    '#f97316',
+}
+
+case 'artifact_saved': {
+  const agentId = `agent-${event.agent}`
+  const artId = `artifact-${event.slug ?? Date.now()}`
+  const color = ARTIFACT_COLOR[event.kind] ?? '#58a6ff'
+  setNodes(nds => [...nds, {
+    id: artId, type: artifactNodeType(event.kind),
+    position: nextArtifactPosition(nds, agentId),
+    data: { kind: event.kind, agentName: event.agent,
+            slug: event.slug, label: event.slug ?? 'artifact',
+            preview: event.preview },
+  }])
+  setEdges(eds => [...eds,
+    glowEdge(`e-${agentId}-${artId}`, agentId, artId,
+             { color, dashed: true })
+  ])
+  break
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- image_saved / memory_saved / agent_spawning / agent_joined / agent_kicked / error / session_ended -->
+  <div class="card" id="ev-image_saved" style="margin-bottom:16px">
+    <div class="card-head"><span class="tag tag-event">WS Event</span><h3>image_saved</h3></div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "image_saved",
+  "agent": "Painter",
+  "url": "/media/20260512_…/images/out.png"
+}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">Creates ImageArtifactNode with clickable image + lightbox. Purple dashed edge from agent.</div>
+      </div>
+      <div class="pane">
+        <div class="code-block"><div class="code-block-header"><span>App.tsx</span></div>
+          <pre><code class="language-typescript">case 'image_saved': {
+  const artId = `artifact-img-saved-${Date.now()}`
+  setNodes(nds => [...nds, {
+    id: artId, type: 'ImageArtifactNode',
+    position: nextArtifactPosition(nds, `agent-${event.agent}`),
+    data: { kind:'image', agentName: event.agent,
+            label: event.url.split('/').pop() ?? 'image',
+            preview: event.url, url: event.url },
+  }])
+  setEdges(eds => [...eds,
+    glowEdge(`e-agent-${event.agent}-${artId}`,
+             `agent-${event.agent}`, artId,
+             { color:'#8b5cf6', dashed:true })
+  ])
+  break
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="ev-memory_saved" style="margin-bottom:16px">
+    <div class="card-head"><span class="tag tag-event">WS Event</span><h3>memory_saved</h3></div>
+    <div class="card-split">
+      <div class="pane">
+        <div class="payload">{ "type": "memory_saved",
+  "category": "character-profile",
+  "content": "Raphael: brooding violinist…",
+  "agent": "Director"
+}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">Creates PhaseArtifactNode with category as label. Blue dashed edge from producing agent.</div>
+      </div>
+      <div class="pane">
+        <div class="code-block"><div class="code-block-header"><span>App.tsx</span></div>
+          <pre><code class="language-typescript">case 'memory_saved': {
+  const artId = `artifact-mem-${Date.now()}`
+  setNodes(nds => [...nds, {
+    id: artId, type: 'PhaseArtifactNode',
+    position: nextArtifactPosition(nds, `agent-${event.agent ?? 'unknown'}`),
+    data: { kind:'phase', agentName: event.agent ?? 'unknown',
+            label: event.category,
+            preview: event.content.slice(0, 120) },
+  }])
+  setEdges(eds => [...eds,
+    glowEdge(`e-agent-${event.agent}-${artId}`,
+             `agent-${event.agent}`, artId,
+             { color:'#58a6ff', dashed:true })
+  ])
+  break
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card" id="ev-agent_spawning">
+      <div class="card-head"><span class="tag tag-event">WS Event</span><h3>agent_spawning</h3></div>
+      <div class="card-body">
+        <div class="payload">{ "type": "agent_spawning",
+  "name": "Alice",
+  "provider": "anthropic"
+}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">
+          If AgentNode exists: sets <code style="color:#90cdf4">floorState='spawning'</code> (dimmed, pulsing). If not: creates new AgentNode + edge.
+        </div>
+        <div style="margin-top:10px" class="mock-node" style="max-width:240px">
+          <div style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #805ad5;border-radius:10px;padding:10px 12px;opacity:0.6;animation:ofp-spawning 1.4s ease-in-out infinite">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="background:#d4a84322;color:#d4a843;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">ANTHROPIC</span>
+              <span style="font-weight:700;font-size:12px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#805ad533;color:#805ad5;border-radius:4px;padding:2px 7px;border:1px solid #805ad555">⚙ spawning</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="ev-agent_joined">
+      <div class="card-head"><span class="tag tag-event">WS Event</span><h3>agent_joined</h3></div>
+      <div class="card-body">
+        <div class="payload">{ "type": "agent_joined",
+  "name": "Alice",
+  "provider": "anthropic"
+}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">
+          Transitions matching AgentNode from <code style="color:#90cdf4">'spawning'</code> → <code style="color:#90cdf4">'waiting'</code>. Full opacity restored.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card" id="ev-agent_kicked">
+      <div class="card-head"><span class="tag tag-event">WS Event</span><h3>agent_kicked</h3></div>
+      <div class="card-body">
+        <div class="payload">{ "type": "agent_kicked",
+  "name": "Alice"
+}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">
+          Removes AgentNode and all connected edges from the ReactFlow graph. Triggered by <code style="color:#90cdf4">DELETE /session/agent/{name}</code> or "Kick" hover button on the node.
+        </div>
+      </div>
+    </div>
+    <div class="card" id="ev-error">
+      <div class="card-head"><span class="tag tag-event">WS Event</span><h3>error</h3></div>
+      <div class="card-body">
+        <div class="payload">{ "type": "error",
+  "agent": "Alice",
+  "message": "API rate limit exceeded",
+  "retryable": false
+}</div>
+        <div style="margin-top:10px">
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #e53e3e;border-radius:10px;padding:10px 12px;max-width:260px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-weight:700;font-size:12px;flex:1">Alice</span>
+              <span style="font-size:10px;background:#e53e3e33;color:#e53e3e;border-radius:4px;padding:2px 7px">❌ error</span>
+            </div>
+            <div style="background:#2d1515;border:1px solid #e53e3e44;border-radius:5px;padding:4px 7px;font-size:11px;color:#fc8181">API rate limit exceeded</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="ev-session_ended">
+    <div class="card-head"><span class="tag tag-event">WS Event</span><h3>session_ended</h3></div>
+    <div class="card-body">
+      <div class="payload">{ "type": "session_ended" }</div>
+      <div style="margin-top:10px;font-size:11px;color:var(--text);line-height:1.7">
+        • FloorNode <code style="color:#90cdf4">sessionState = 'stopped'</code> (red border)<br>
+        • ConversationNode <code style="color:#90cdf4">sessionId = null</code><br>
+        • All GlowEdges deactivated (<code style="color:#90cdf4">active = false</code>)<br>
+        • Elapsed timer cleared
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ NODES -->
+<section id="nodes">
+  <div class="section-head"><h2>Node Type Gallery</h2><p>All 8 ReactFlow node types. Click states to preview.</p></div>
+
+  <!-- FloorNode -->
+  <div class="card" id="node-floor" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-node">Node</span><h3>FloorNode</h3>
+      <span class="filepath">canvas/frontend/src/nodes/FloorNode.tsx</span>
+    </div>
+    <div class="card-split">
+      <div class="pane">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Session control hub. One per canvas. Controls policy, topic, max turns, no-human flag.</div>
+        <div class="mock-node" style="background:linear-gradient(135deg,#1a2332,#0d1520);border:2px solid #38a169;border-radius:12px;padding:14px 16px;min-width:240px;box-shadow:0 0 20px #38a16944">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <div style="width:10px;height:10px;border-radius:50%;background:#38a169;box-shadow:0 0 6px #38a169"></div>
+            <span style="font-weight:700;font-size:14px">Floor</span>
+            <span style="margin-left:auto;font-size:11px;background:#38a16933;color:#38a169;border-radius:4px;padding:1px 6px">running</span>
+          </div>
+          <div style="color:#93a4b8;font-size:11px;margin-bottom:3px">Policy</div>
+          <div style="background:#0d1520;border:1px solid #2a3a4c;border-radius:6px;padding:4px 8px;font-size:12px;color:#e6edf5;margin-bottom:8px">SEQUENTIAL</div>
+          <div style="color:#93a4b8;font-size:11px;margin-bottom:3px">Topic</div>
+          <div style="background:#0d1520;border:1px solid #2a3a4c;border-radius:6px;padding:4px 8px;font-size:12px;color:#93a4b8;margin-bottom:8px">Write a short story…</div>
+          <div style="display:flex;gap:10px;font-size:11px;color:#93a4b8;margin-bottom:10px">
+            <span>Turns: <b style="color:#58a6ff">4</b></span>
+            <span>Elapsed: <b style="color:#58a6ff">23s</b></span>
+          </div>
+          <div style="background:#6b2121;color:#fc8181;border:1px solid #fc818166;border-radius:7px;padding:7px 0;text-align:center;font-weight:600;font-size:13px">■ Stop</div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px">
+          <span style="background:#38a16933;color:#38a169;border:1px solid #38a16944;border-radius:4px;padding:2px 8px;font-size:10px">running → green</span>
+          <span style="background:#4a556833;color:#93a4b8;border:1px solid #4a556844;border-radius:4px;padding:2px 8px;font-size:10px">idle → gray</span>
+          <span style="background:#e53e3e33;color:#fc8181;border:1px solid #e53e3e44;border-radius:4px;padding:2px 8px;font-size:10px">stopped → red</span>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="code-block">
+          <div class="code-block-header"><span>FloorNodeData interface</span><span class="filepath">types.ts</span></div>
+          <pre><code class="language-typescript">interface FloorNodeData {
+  policy: FloorPolicy       // SEQUENTIAL | ROUND_ROBIN | MODERATED
+                            // FREE_FOR_ALL | SHOWRUNNER_DRIVEN
+  topic: string             // seeded to FloorManager memory
+  maxTurns: number | null   // null = unlimited; watchdog loop
+  showFloorEvents: boolean  // passed to TerminalRenderer
+  noHuman: boolean          // skip WebHumanAgent if true
+  humanName: string         // display name for HumanNode
+  sessionState: SessionState // 'idle' | 'running' | 'stopped'
+  sessionId: string | null
+  turnCount: number
+  elapsedSecs: number
+}
+
+const SESSION_STATE_COLOR = {
+  idle:    '#4a5568',
+  running: '#38a169',
+  stopped: '#e53e3e',
+}</code></pre>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>StartRequest shape → POST /session/start</span></div>
+          <pre><code class="language-typescript">// FloorNode data maps to backend NodeData:
+class NodeData(BaseModel):
+    policy: str = "SEQUENTIAL"
+    topic: str = ""
+    maxTurns: int | None = None
+    showFloorEvents: bool = False
+    noHuman: bool = True
+    humanName: str = "User"
+    provider: str = ""  # (AgentNode fields)
+    name: str = ""
+    model: str = ""
+    systemPrompt: str = ""
+    slug: str = ""
+    agentType: str = ""</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AgentNode -->
+  <div class="card" id="node-agent" style="margin-bottom:16px">
+    <div class="card-head">
+      <span class="tag tag-node">Node</span><h3>AgentNode</h3>
+      <span class="filepath">canvas/frontend/src/nodes/AgentNode.tsx</span>
+    </div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">One per LLM agent. Shows provider, type badge, floor state with animation, last message preview, message history (expandable). Kick button on hover.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600">All 7 floor states:</div>
+      <div class="grid-4" style="margin-bottom:12px">
+        <div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #38a169;border-radius:10px;padding:8px 10px;--pc:#38a16988;animation:ofp-pulse 1.6s ease-in-out infinite">
+            <div style="font-size:10px;font-weight:700;color:#38a169;margin-bottom:4px">speaking</div>
+            <div style="font-size:9px;color:var(--muted)">Green pulse, animated dots in badge</div>
+          </div>
+        </div>
+        <div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #4a5568;border-radius:10px;padding:8px 10px">
+            <div style="font-size:10px;font-weight:700;color:#4a5568;margin-bottom:4px">waiting</div>
+            <div style="font-size:9px;color:var(--muted)">Gray border, no animation</div>
+          </div>
+        </div>
+        <div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #d4a843;border-radius:10px;padding:8px 10px;animation:ofp-pulse-amber 1.4s ease-in-out infinite">
+            <div style="font-size:10px;font-weight:700;color:#d69e2e;margin-bottom:4px">requesting</div>
+            <div style="font-size:9px;color:var(--muted)">Amber border pulse loop</div>
+          </div>
+        </div>
+        <div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #e53e3e;border-radius:10px;padding:8px 10px">
+            <div style="font-size:10px;font-weight:700;color:#e53e3e;margin-bottom:4px">error</div>
+            <div style="font-size:9px;color:var(--muted)">Red border + error message</div>
+          </div>
+        </div>
+        <div>
+          <div class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #805ad5;border-radius:10px;padding:8px 10px;opacity:.6;animation:ofp-spawning 1.4s infinite">
+            <div style="font-size:10px;font-weight:700;color:#805ad5;margin-bottom:4px">spawning</div>
+            <div style="font-size:9px;color:var(--muted)">Dimmed, opacity pulse</div>
+          </div>
+        </div>
+        <div>
+          <div id="yield-ex" class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #00bcd4;border-radius:10px;padding:8px 10px;animation:ofp-flash-teal 1.5s ease-out forwards">
+            <div style="font-size:10px;font-weight:700;color:#00bcd4;margin-bottom:4px">yielding</div>
+            <div style="font-size:9px;color:var(--muted)">Teal flash, fades in 1.5s</div>
+          </div>
+          <button class="sim-btn" style="margin-top:4px;font-size:10px" onclick="replayYielding()">Replay</button>
+        </div>
+        <div>
+          <div id="manifest-ex" class="mock-node" style="background:linear-gradient(135deg,#161f2e,#0d1520);border:2px solid #8b5cf6;border-radius:10px;padding:8px 10px;animation:ofp-flash-purple 1.5s ease-out forwards">
+            <div style="font-size:10px;font-weight:700;color:#8b5cf6;margin-bottom:4px">manifest</div>
+            <div style="font-size:9px;color:var(--muted)">Purple flash, fades in 1.5s</div>
+          </div>
+          <button class="sim-btn" style="margin-top:4px;font-size:10px" onclick="replayManifest()">Replay</button>
+        </div>
+      </div>
+      <div class="code-block">
+        <div class="code-block-header"><span>AgentNodeData + provider/type colors</span></div>
+        <pre><code class="language-typescript">interface AgentNodeData {
+  provider: 'anthropic' | 'openai' | 'google' | 'huggingface'
+  name: string
+  model: string
+  systemPrompt: string
+  slug: string          // @category/name → loaded from agents/
+  agentType: string     // maps to TASK_SUBTYPES (showrunner, code-generation, etc.)
+  floorState: AgentFloorState
+  messages: Message[]
+  errorMessage?: string
+}
+
+const PROVIDER_COLOR = {
+  anthropic:   '#d4a843',  // amber
+  openai:      '#10a37f',  // green
+  google:      '#4285f4',  // blue
+  huggingface: '#ff7b00',  // orange
+}
+
+const TYPE_COLOR = {
+  showrunner:       '#d4a843',
+  orchestrator:     '#d4a843',
+  'code-generation':'#00bcd4',
+  'text-to-image':  '#8b5cf6',
+  'text-to-music':  '#f97316',
+  'text-to-video':  '#e53e3e',
+}</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- HumanNode + ConversationNode side by side -->
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card" id="node-human">
+      <div class="card-head"><span class="tag tag-node">Node</span><h3>HumanNode</h3><span class="filepath">HumanNode.tsx</span></div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Rendered when <code style="color:#90cdf4">noHuman=false</code>. Input box sends via <code style="color:#90cdf4">POST /session/message</code> → WebHumanAgent queue.</div>
+        <div class="mock-node" style="background:linear-gradient(135deg,#1a2a1a,#0d1520);border:2px solid #38a169;border-radius:10px;padding:12px 14px;max-width:280px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="background:#38a16922;color:#68d391;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">HUMAN</span>
+            <span style="font-weight:700;font-size:13px">User</span>
+          </div>
+          <div style="background:#0d1520;border:1px solid #2a3a4c;border-radius:6px;padding:4px 8px;font-size:11px;color:#c9d1d9;margin-bottom:8px">Hello, can you write a poem?</div>
+          <div style="display:flex;gap:6px">
+            <input disabled placeholder="Type a message…" style="flex:1;background:#0d1520;color:#93a4b8;border:1px solid #2a3a4c;border-radius:6px;padding:4px 8px;font-size:11px"/>
+            <button style="background:#1a4731;color:#68d391;border:1px solid #68d39166;border-radius:6px;padding:4px 10px;font-size:11px">Send</button>
+          </div>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>HumanNodeData</span></div>
+          <pre><code class="language-typescript">interface HumanNodeData {
+  humanName: string
+  messages: Message[]
+}
+// Input sends via:
+await fetch('/session/message', {
+  method: 'POST',
+  body: JSON.stringify({ text: input }),
+})</code></pre>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="node-conversation">
+      <div class="card-head"><span class="tag tag-node">Node</span><h3>ConversationNode</h3><span class="filepath">ConversationNode.tsx</span></div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Two-tab node: <b>Timeline</b> (iframe to /trace/live) and <b>Events</b> (reverse-chronological floor event log). One per canvas, always connected to FloorNode.</div>
+        <div class="mock-node" style="background:linear-gradient(135deg,#1a1f2e,#0d1117);border:2px solid #30363d;border-radius:10px;padding:12px 14px;min-width:360px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:15px">📊</span>
+            <span style="font-weight:700;font-size:13px">Conversation Trace</span>
+            <button style="margin-left:auto;background:#1a2a3a;color:#58a6ff;border:1px solid #58a6ff44;border-radius:4px;padding:2px 8px;font-size:10px">⤢ Full</button>
+          </div>
+          <div style="color:#93a4b8;font-size:11px;margin-bottom:10px">Policy: <span style="color:#c9d1d9">SEQUENTIAL</span> · Turns: <span style="color:#58a6ff;font-weight:600">4</span></div>
+          <div style="display:flex;background:#0d1117;border:1px solid #21262d;border-radius:6px 6px 0 0">
+            <div style="flex:1;padding:6px 0;text-align:center;font-size:11px;color:#58a6ff;font-weight:600;border-bottom:2px solid #58a6ff">Timeline</div>
+            <div style="flex:1;padding:6px 0;text-align:center;font-size:11px;color:#6e7681;border-bottom:2px solid transparent">Events</div>
+          </div>
+          <div style="background:#0d1117;border:1px solid #21262d;border-top:none;border-radius:0 0 6px 6px;height:80px;display:flex;align-items:center;justify-content:center;color:#4a5568;font-size:11px;font-style:italic">iframe → /trace/live?session=…</div>
+        </div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-block-header"><span>ConversationNodeData</span></div>
+          <pre><code class="language-typescript">interface ConversationNodeData {
+  sessionId: string | null
+  policy: string
+  topic: string
+  turnCount: number
+  eventLog: FloorEventEntry[]  // last 200 events
+}
+interface FloorEventEntry {
+  id: string; ts: number; agent: string; to?: string
+  type: 'floor_grant'|'floor_revoke'|'floor_yield'
+       |'floor_request'|'utterance'|'manifest_published'
+  preview?: string  // utterance only, first 70 chars
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Artifact nodes -->
+  <div class="card" id="node-image" style="margin-bottom:16px">
+    <div class="card-head"><span class="tag tag-node">Node</span><h3>Artifact Nodes</h3><span class="filepath">nodes/ImageArtifactNode.tsx · CodeArtifactNode.tsx · PhaseArtifactNode.tsx · MusicArtifactNode.tsx</span></div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">All share <code style="color:#90cdf4">ArtifactNodeData</code>. Created dynamically when events arrive; connected to producing agent with a dashed GlowEdge.</div>
+      <div class="grid-4">
+        <!-- Image -->
+        <div id="node-image-card">
+          <div class="mock-node" style="background:linear-gradient(135deg,#1a1230,#0d1520);border:2px solid #8b5cf6;border-radius:10px;padding:10px 12px;min-width:140px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="background:#8b5cf622;color:#c4b5fd;border:1px solid #8b5cf644;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">IMAGE</span>
+              <span style="color:#93a4b8;font-size:10px">out.png</span>
+            </div>
+            <div style="background:#2a1a4a;border-radius:5px;height:60px;display:flex;align-items:center;justify-content:center;color:#8b5cf6;font-size:24px">🖼️</div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Purple · click = lightbox</div>
+        </div>
+        <!-- Code -->
+        <div id="node-code-card">
+          <div class="mock-node" style="background:linear-gradient(135deg,#0d1a18,#0d1520);border:2px solid #10a37f;border-radius:10px;padding:10px 12px;min-width:140px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <span style="background:#10a37f22;color:#6ee7b7;border:1px solid #10a37f44;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">CODE</span>
+              <span style="color:#93a4b8;font-size:10px">main.py</span>
+            </div>
+            <pre style="background:#0d1520;border-radius:5px;padding:5px 7px;font-size:9px;color:#68d391;margin:0;max-height:60px;overflow:hidden">def solve(n):
+  return n * 2</pre>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Green · expand toggle</div>
+        </div>
+        <!-- Phase -->
+        <div id="node-phase-card">
+          <div class="mock-node" style="background:linear-gradient(135deg,#0d1520,#0d1117);border:2px solid #58a6ff;border-radius:10px;padding:10px 12px;min-width:140px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <span style="background:#58a6ff22;color:#90cdf4;border:1px solid #58a6ff44;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">PHASE</span>
+              <span style="color:#93a4b8;font-size:10px">beat-01</span>
+            </div>
+            <div style="background:#0d1520;border-radius:5px;padding:5px 7px;font-size:10px;color:#90cdf4;line-height:1.5">Chapter 1: The fog rolled in from the harbour…</div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Blue · expand toggle</div>
+        </div>
+        <!-- Music -->
+        <div id="node-music-card">
+          <div class="mock-node" style="background:linear-gradient(135deg,#1a1005,#0d1520);border:2px solid #f97316;border-radius:10px;padding:10px 12px;min-width:140px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="background:#f9731622;color:#fdba74;border:1px solid #f9731644;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">MUSIC</span>
+              <span style="color:#93a4b8;font-size:10px">theme.mp3</span>
+            </div>
+            <div style="background:#0d1520;border-radius:5px;padding:8px;text-align:center;color:#f97316;font-size:20px">♪</div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Orange · audio element</div>
+        </div>
+      </div>
+      <div class="code-block" style="margin-top:12px">
+        <div class="code-block-header"><span>ArtifactNodeData + routing</span></div>
+        <pre><code class="language-typescript">interface ArtifactNodeData {
+  kind: 'image' | 'code' | 'phase' | 'music'
+  agentName: string
+  slug?: string
+  label: string     // filename or slug
+  preview: string   // first ~120 chars, or image URL
+  url?: string      // direct URL for images / audio
+}
+
+// Event → node type routing (App.tsx)
+function artifactNodeType(kind: string): string {
+  if (kind === 'image')              return 'ImageArtifactNode'
+  if (kind === 'code' || kind==='file') return 'CodeArtifactNode'
+  if (kind === 'music')              return 'MusicArtifactNode'
+  return 'PhaseArtifactNode'
+}
+
+// Position: right of producing agent, staggered vertically
+function nextArtifactPosition(nodes, agentNodeId) {
+  const agent = nodes.find(n => n.id === agentNodeId)
+  const count = nodes.filter(n =>
+    n.type?.includes('ArtifactNode') &&
+    n.data.agentName === agent?.data?.name
+  ).length
+  return { x: (agent?.position.x ?? 400) + 260,
+           y: (agent?.position.y ?? 100) + count * 140 }
+}</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ GLOW EDGE -->
+<section id="glow-edge">
+  <div class="section-head"><h2>GlowEdge States</h2><p>canvas/frontend/src/edges/GlowEdge.tsx — custom ReactFlow edge with 5 visual states.</p></div>
+  <div class="card">
+    <div class="card-body">
+      <div class="grid-2">
+        <div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Inactive (default — Floor→Agent, no floor holder)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30"><path d="M10,15 C80,15 160,15 230,15" stroke="#2a3a4c" stroke-width="1.5" fill="none"/></svg>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Active — floor granted to this agent (animated dash travel)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30">
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#38a169" stroke-width="2.5" fill="none"/>
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#38a169" stroke-width="3" stroke-dasharray="10 8" fill="none" style="animation:dashTravel 1.0s linear infinite;filter:drop-shadow(0 0 5px #38a169)"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Dashed — artifact edge (Agent → ArtifactNode, never active)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30"><path d="M10,15 C80,15 160,15 230,15" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5 4" fill="none"/></svg>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Pulse: amber — floor_request (blinking dashed)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30">
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#2a3a4c" stroke-width="1.5" fill="none"/>
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#d4a843" stroke-width="2" stroke-dasharray="6 5" fill="none" style="animation:edgeBlinkAmber 0.9s ease-in-out infinite;filter:drop-shadow(0 0 4px #d4a843)"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Pulse: teal — floor_yield (solid, fades out in 1.5s)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30">
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#2a3a4c" stroke-width="1.5" fill="none"/>
+                <path id="teal-path" d="M10,15 C80,15 160,15 230,15" stroke="#00bcd4" stroke-width="3" fill="none" style="animation:ofp-edge-flash-teal 1.5s ease-out forwards;filter:drop-shadow(0 0 6px #00bcd4)"/>
+              </svg>
+              <button class="sim-btn" style="margin-top:4px;font-size:10px" onclick="replayTealEdge()">Replay</button>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Pulse: purple — manifest_published (solid, fades out in 1.5s)</div>
+              <svg width="240" height="30" viewBox="0 0 240 30">
+                <path d="M10,15 C80,15 160,15 230,15" stroke="#2a3a4c" stroke-width="1.5" fill="none"/>
+                <path id="purple-path" d="M10,15 C80,15 160,15 230,15" stroke="#8b5cf6" stroke-width="3" fill="none" style="animation:ofp-edge-flash-purple 1.5s ease-out forwards;filter:drop-shadow(0 0 6px #8b5cf6)"/>
+              </svg>
+              <button class="sim-btn" style="margin-top:4px;font-size:10px" onclick="replayPurpleEdge()">Replay</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="code-block">
+            <div class="code-block-header"><span>GlowEdge.tsx — full component</span></div>
+            <pre><code class="language-typescript">interface GlowEdgeData {
+  active: boolean      // true while target agent holds floor
+  color: string        // stroke color
+  dashed: boolean      // true for artifact edges
+  pulse?: 'amber' | 'teal' | 'purple' | null
+}
+
+export function GlowEdge({ id, sourceX,sourceY,targetX,targetY,
+                            sourcePosition,targetPosition, data }) {
+  const { color, active, dashed, pulse } = data as GlowEdgeData
+  const [edgePath] = getBezierPath({...})
+
+  return (
+    &lt;&gt;
+      {/* Base path */}
+      &lt;path d={edgePath} style={{
+        stroke: color, strokeWidth: active ? 2.5 : 1.5,
+        strokeDasharray: dashed ? '5 4' : undefined,
+        fill: 'none',
+      }} /&gt;
+
+      {/* Active glow overlay */}
+      {active &amp;&amp; &lt;path d={edgePath} style={{
+        stroke: color, strokeWidth: 3,
+        strokeDasharray: '10 8', fill: 'none',
+        filter: `drop-shadow(0 0 5px ${color})`,
+        animation: 'dashTravel 1.0s linear infinite',
+      }} /&gt;}
+
+      {/* Amber — requestFloor */}
+      {pulse==='amber' &amp;&amp; &lt;path d={edgePath} style={{
+        stroke:'#d4a843', strokeWidth:2,
+        strokeDasharray:'6 5', fill:'none',
+        filter:'drop-shadow(0 0 4px #d4a843)',
+        animation:'edgeBlinkAmber 0.9s ease-in-out infinite',
+      }} /&gt;}
+
+      {/* Teal — yieldFloor */}
+      {pulse==='teal' &amp;&amp; &lt;path d={edgePath} style={{
+        stroke:'#00bcd4', strokeWidth:3, fill:'none',
+        filter:'drop-shadow(0 0 6px #00bcd4)',
+        animation:'ofp-edge-flash-teal 1.5s ease-out forwards',
+      }} /&gt;}
+
+      {/* Purple — publishManifest */}
+      {pulse==='purple' &amp;&amp; &lt;path d={edgePath} style={{
+        stroke:'#8b5cf6', strokeWidth:3, fill:'none',
+        filter:'drop-shadow(0 0 6px #8b5cf6)',
+        animation:'ofp-edge-flash-purple 1.5s ease-out forwards',
+      }} /&gt;}
+    &lt;/&gt;
+  )
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ API -->
+<section id="api">
+  <div class="section-head"><h2>Backend REST + WebSocket API</h2><p>canvas/backend/main.py — FastAPI app via build_app(). Port 8765 by default.</p></div>
+  <div class="card">
+    <div class="card-body">
+      <table>
+        <tr><th>Method</th><th>Path</th><th>Request</th><th>Response</th><th>Notes</th></tr>
+        <tr><td><span style="color:#68d391">POST</span></td><td><code>/session/start</code></td><td><code>StartRequest</code></td><td><code>{ session_id }</code></td><td>Spawns agents, starts floor loop, begins WS broadcast</td></tr>
+        <tr><td><span style="color:#fc8181">DELETE</span></td><td><code>/session/stop</code></td><td>—</td><td><code>{ ok: true }</code></td><td>Calls floor.stop(), awaits task, emits session_ended</td></tr>
+        <tr><td><span style="color:#90cdf4">GET</span></td><td><code>/session/status</code></td><td>—</td><td><code>{ running, session_id }</code></td><td>Polls session state</td></tr>
+        <tr><td><span style="color:#68d391">POST</span></td><td><code>/session/agent/add</code></td><td><code>AddAgentRequest</code></td><td><code>{ name }</code></td><td>Hot-add agent to running session</td></tr>
+        <tr><td><span style="color:#fc8181">DELETE</span></td><td><code>/session/agent/{name}</code></td><td>—</td><td><code>{ name }</code></td><td>Kicks agent; emits agent_kicked</td></tr>
+        <tr><td><span style="color:#68d391">POST</span></td><td><code>/session/message</code></td><td><code>{ text }</code></td><td><code>{ ok }</code></td><td>Puts text into WebHumanAgent.input_queue</td></tr>
+        <tr><td><span style="color:#90cdf4">GET</span></td><td><code>/trace/live</code></td><td>?session=id</td><td>HTML</td><td>render_trace_html() with WS injected; shown in ConversationNode iframe</td></tr>
+        <tr><td><span style="color:#90cdf4">GET</span></td><td><code>/media/{path}</code></td><td>—</td><td>File</td><td>Serves result/ files; path-traversal protected</td></tr>
+        <tr><td><span style="color:#90cdf4">GET</span></td><td><code>/agents/list</code></td><td>—</td><td><code>[{slug,display_name,category}]</code></td><td>Powers SlugCombobox autocomplete</td></tr>
+        <tr><td><span style="color:#90cdf4">GET</span></td><td><code>/models/list</code></td><td>—</td><td><code>{anthropic:[],openai:[],google:[]}</code></td><td>Powers model autocomplete; built from MODEL_CATALOG</td></tr>
+        <tr><td><span style="color:#fbd38d">WS</span></td><td><code>/ws/{session_id}</code></td><td>—</td><td>JSON events stream</td><td>Late-joining clients receive full event_log replay</td></tr>
+      </table>
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="code-block">
+          <div class="code-block-header"><span>StartRequest shape</span></div>
+          <pre><code class="language-typescript">class StartRequest(BaseModel):
+    nodes: list[CanvasNode]
+    edges: list[CanvasEdge]
+
+class CanvasNode(BaseModel):
+    id: str; type: str; data: NodeData
+
+class NodeData(BaseModel):
+    # FloorNode fields:
+    policy: str = "SEQUENTIAL"
+    topic: str = ""; maxTurns: int | None = None
+    noHuman: bool = True; humanName: str = "User"
+    # AgentNode fields:
+    provider: str = ""; name: str = ""
+    model: str = ""; systemPrompt: str = ""
+    slug: str = ""; agentType: str = ""</code></pre>
+        </div>
+        <div class="code-block">
+          <div class="code-block-header"><span>AddAgentRequest</span></div>
+          <pre><code class="language-typescript">class AddAgentRequest(BaseModel):
+    provider: str
+    name: str
+    model: str = ""
+    systemPrompt: str = ""
+    slug: str = ""
+    agentType: str = ""
+
+# agentType maps to TASK_SUBTYPES:
+# showrunner, orchestrator, code-generation,
+# text-to-image, text-to-video, text-to-music,
+# image-to-text, image-text-to-text,
+# text-generation, text-classification,
+# summarization, image-classification,
+# object-detection, image-segmentation,
+# token-classification</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════ COLORS -->
+<section id="colors">
+  <div class="section-head"><h2>Color &amp; Animation System</h2><p>Every named color used across canvas nodes, edges, and states.</p></div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-head"><h3>Provider Colors</h3></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+        <div class="swatch"><div class="swatch-dot" style="background:#d4a843"></div><div><div class="swatch-name">Anthropic</div><div class="swatch-hex">#d4a843</div><div class="swatch-use">AgentNode border/badge, PROVIDER_COLOR</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#10a37f"></div><div><div class="swatch-name">OpenAI</div><div class="swatch-hex">#10a37f</div><div class="swatch-use">AgentNode, CodeArtifactNode border</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#4285f4"></div><div><div class="swatch-name">Google</div><div class="swatch-hex">#4285f4</div><div class="swatch-use">AgentNode border/badge</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#ff7b00"></div><div><div class="swatch-name">HuggingFace</div><div class="swatch-hex">#ff7b00</div><div class="swatch-use">AgentNode border/badge</div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Agent Floor State Colors</h3></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+        <div class="swatch"><div class="swatch-dot" style="background:#38a169"></div><div><div class="swatch-name">speaking</div><div class="swatch-hex">#38a169</div><div class="swatch-use">Green pulse, active edge, FloorNode running</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#4a5568"></div><div><div class="swatch-name">waiting</div><div class="swatch-hex">#4a5568</div><div class="swatch-use">Default idle state</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#d69e2e"></div><div><div class="swatch-name">requesting</div><div class="swatch-hex">#d69e2e / #d4a843</div><div class="swatch-use">Amber pulse + edge blink</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#e53e3e"></div><div><div class="swatch-name">error</div><div class="swatch-hex">#e53e3e</div><div class="swatch-use">Error state, FloorNode stopped</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#805ad5"></div><div><div class="swatch-name">spawning</div><div class="swatch-hex">#805ad5</div><div class="swatch-use">Opacity pulse while agent initializes</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#00bcd4"></div><div><div class="swatch-name">yielding</div><div class="swatch-hex">#00bcd4</div><div class="swatch-use">Teal flash (1.5s), edge teal pulse</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#8b5cf6"></div><div><div class="swatch-name">manifest</div><div class="swatch-hex">#8b5cf6</div><div class="swatch-use">Purple flash (1.5s), edge purple pulse</div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Artifact Node Colors</h3></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+        <div class="swatch"><div class="swatch-dot" style="background:#8b5cf6"></div><div><div class="swatch-name">image</div><div class="swatch-hex">#8b5cf6</div><div class="swatch-use">ImageArtifactNode border + dashed edge</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#10a37f"></div><div><div class="swatch-name">code / file</div><div class="swatch-hex">#10a37f</div><div class="swatch-use">CodeArtifactNode border + dashed edge</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#58a6ff"></div><div><div class="swatch-name">phase / markdown / memory</div><div class="swatch-hex">#58a6ff</div><div class="swatch-use">PhaseArtifactNode border + dashed edge</div></div></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#f97316"></div><div><div class="swatch-name">music</div><div class="swatch-hex">#f97316</div><div class="swatch-use">MusicArtifactNode border + dashed edge</div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Animation Timings</h3></div>
+      <div class="card-body">
+        <table>
+          <tr><th>Keyframe</th><th>Duration</th><th>Trigger</th></tr>
+          <tr><td><code>ofp-pulse</code></td><td>1.6s infinite</td><td>speaking state</td></tr>
+          <tr><td><code>ofp-pulse-amber</code></td><td>1.4s infinite</td><td>requesting state</td></tr>
+          <tr><td><code>ofp-flash-teal</code></td><td>1.5s forwards</td><td>yielding state (one-shot)</td></tr>
+          <tr><td><code>ofp-flash-purple</code></td><td>1.5s forwards</td><td>manifest state (one-shot)</td></tr>
+          <tr><td><code>ofp-dot</code></td><td>1.2s infinite</td><td>speaking dots in badge</td></tr>
+          <tr><td><code>dashTravel</code></td><td>1.0s infinite</td><td>GlowEdge active (floor grant)</td></tr>
+          <tr><td><code>edgeBlinkAmber</code></td><td>0.9s infinite</td><td>GlowEdge amber pulse (request)</td></tr>
+          <tr><td><code>ofp-edge-flash-teal</code></td><td>1.5s forwards</td><td>GlowEdge teal (yield)</td></tr>
+          <tr><td><code>ofp-edge-flash-purple</code></td><td>1.5s forwards</td><td>GlowEdge purple (manifest)</td></tr>
+        </table>
+        <div style="margin-top:10px;font-size:11px;color:var(--muted)">One-shot animations (forwards) auto-revert via <code>setTimeout(..., 1500)</code> in App.tsx which resets <code>floorState</code> and <code>pulse</code> back to defaults.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h3>App-level Constants</h3></div>
+    <div class="card-body">
+      <div class="code-block">
+        <div class="code-block-header"><span>App.tsx module-level constants</span></div>
+        <pre><code class="language-typescript">const FLOOR_ID = 'floor-main'       // stable ID for the single FloorNode
+const CONV_ID  = 'conv-main'        // stable ID for the ConversationNode
+const LAYOUT_KEY = 'ofp-canvas-layout-v3'  // localStorage key (bump on edge data shape changes)
+const API = ''                       // relative URL prefix (empty = same origin)
+
+// NODE_TYPES must be at module level (not inside App) to avoid ReactFlow
+// unmounting nodes on each render (which destroys input focus)
+const NODE_TYPES: NodeTypes = {
+  FloorNode, AgentNode, HumanNode, ConversationNode,
+  ImageArtifactNode, CodeArtifactNode, PhaseArtifactNode, MusicArtifactNode,
+}
+const EDGE_TYPES = { glow: GlowEdge }
+
+// Callbacks passed via CanvasContext (not props) for the same reason
+// context/CanvasContext.tsx:
+interface CanvasCallbacks {
+  onRun: () => void
+  onStop: () => void
+  onFloorChange: (patch: Partial&lt;FloorNodeData&gt;) => void
+  onKick: (name: string) => void
+  onSend: (text: string) => void
+  sessionRunning: boolean
+}</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+// Highlight all code blocks
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el))
+  // Sidebar active tracking
+  const sections = document.querySelectorAll('section, .card[id]')
+  const links = document.querySelectorAll('.sidebar a')
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'))
+        const link = document.querySelector(`.sidebar a[href="#${e.target.id}"]`)
+        if (link) link.classList.add('active')
+      }
+    })
+  }, { threshold: 0.2 })
+  sections.forEach(s => observer.observe(s))
+})
+
+// Simulate floor_yield on node
+function simulateYield() {
+  const node = document.getElementById('yield-node')
+  const badge = document.getElementById('yield-badge')
+  node.style.border = '2px solid #00bcd4'
+  node.style.animation = 'ofp-flash-teal 1.5s ease-out forwards'
+  badge.style.background = '#00bcd433'
+  badge.style.color = '#00bcd4'
+  badge.style.border = '1px solid #00bcd455'
+  badge.textContent = '↩ yielding'
+  setTimeout(() => {
+    node.style.border = '2px solid #4a5568'
+    node.style.animation = ''
+    badge.style.background = '#4a556833'
+    badge.style.color = '#4a5568'
+    badge.style.border = '1px solid #4a556855'
+    badge.textContent = '⏳ waiting'
+  }, 1500)
+}
+
+function simulateManifest() {
+  const node = document.getElementById('manifest-node')
+  node.style.animation = 'none'
+  void node.offsetWidth
+  node.style.animation = 'ofp-flash-purple 1.5s ease-out forwards'
+}
+
+function replayYielding() {
+  const el = document.getElementById('yield-ex')
+  el.style.animation = 'none'
+  void el.offsetWidth
+  el.style.animation = 'ofp-flash-teal 1.5s ease-out forwards'
+}
+
+function replayManifest() {
+  const el = document.getElementById('manifest-ex')
+  el.style.animation = 'none'
+  void el.offsetWidth
+  el.style.animation = 'ofp-flash-purple 1.5s ease-out forwards'
+}
+
+function replayTealEdge() {
+  const el = document.getElementById('teal-path')
+  el.style.animation = 'none'
+  void el.offsetWidth
+  el.style.animation = 'ofp-edge-flash-teal 1.5s ease-out forwards'
+}
+
+function replayPurpleEdge() {
+  const el = document.getElementById('purple-path')
+  el.style.animation = 'none'
+  void el.offsetWidth
+  el.style.animation = 'ofp-edge-flash-purple 1.5s ease-out forwards'
+}
+</script>
+</body>
+</html>
