@@ -31,6 +31,7 @@ import { GlowEdge } from './edges/GlowEdge'
 import { SlugCombobox } from './components/SlugCombobox'
 import { useSlugs } from './hooks/useSlugs'
 import { useModels } from './hooks/useModels'
+import { usePresets } from './hooks/usePresets'
 import { useSession } from './hooks/useSession'
 
 import type {
@@ -180,6 +181,73 @@ function makeInitialNodes(): Node[] {
   )
 }
 
+function hydrateFromConfig(config: { nodes: any[]; edges: any[] }): {
+  nodes: Node[]; edges: Edge[]
+} {
+  const rfNodes: Node[] = []
+  const rfEdges: Edge[] = []
+
+  for (const n of config.nodes ?? []) {
+    if (n.type === 'FloorNode') {
+      rfNodes.push({
+        id: FLOOR_ID, type: 'FloorNode', position: { x: 0, y: 0 },
+        data: {
+          policy: n.data?.policy ?? 'SEQUENTIAL',
+          topic: n.data?.topic ?? '',
+          maxTurns: n.data?.maxTurns ?? null,
+          noHuman: n.data?.noHuman ?? true,
+          humanName: n.data?.humanName ?? 'User',
+          showFloorEvents: false,
+          sessionState: 'idle' as const,
+          sessionId: null,
+          turnCount: 0,
+          elapsedSecs: 0,
+        } satisfies FloorNodeData,
+      })
+    } else if (n.type === 'AgentNode') {
+      const agentId = `agent-${n.data?.name}`
+      rfNodes.push({
+        id: agentId, type: 'AgentNode', position: { x: 0, y: 0 },
+        data: {
+          provider: n.data?.provider ?? 'anthropic',
+          name: n.data?.name ?? '',
+          model: n.data?.model ?? '',
+          systemPrompt: n.data?.systemPrompt ?? '',
+          slug: n.data?.slug ?? '',
+          agentType: n.data?.agentType ?? '',
+          floorState: 'waiting' as const,
+          messages: [],
+        } satisfies AgentNodeData,
+      })
+      rfEdges.push(glowEdge(`e-${FLOOR_ID}-${agentId}`, FLOOR_ID, agentId))
+    } else if (n.type === 'HumanNode') {
+      rfNodes.push({
+        id: 'human-main', type: 'HumanNode', position: { x: 0, y: 0 },
+        data: {
+          humanName: n.data?.humanName ?? 'User',
+          messages: [],
+        } satisfies HumanNodeData,
+      })
+      rfEdges.push(glowEdge('e-floor-human-main', FLOOR_ID, 'human-main'))
+    }
+  }
+
+  if (!rfNodes.find(n => n.id === CONV_ID)) {
+    rfNodes.push({
+      id: CONV_ID, type: 'ConversationNode', position: { x: 0, y: 0 },
+      data: {
+        sessionId: null, policy: '', topic: '', turnCount: 0, eventLog: [],
+      } satisfies ConversationNodeData,
+    })
+    rfEdges.push(glowEdge(`e-${FLOOR_ID}-${CONV_ID}`, FLOOR_ID, CONV_ID))
+  }
+
+  return {
+    nodes: applyDagreLayout(rfNodes, rfEdges),
+    edges: rfEdges,
+  }
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -197,6 +265,20 @@ export default function App() {
 
   const slugs = useSlugs()
   const models = useModels()
+  const presets = usePresets()
+  const [selectedPreset, setSelectedPreset] = useState('')
+
+  useEffect(() => {
+    fetch('/session/initial')
+      .then(r => r.ok ? r.json() : null)
+      .then((config: { nodes: any[]; edges: any[] } | null) => {
+        if (!config) return
+        const hydrated = hydrateFromConfig(config)
+        setNodes(hydrated.nodes)
+        setEdges(hydrated.edges)
+      })
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Restore layout ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -599,6 +681,17 @@ export default function App() {
     setShowAddAgent(false)
   }, [newAgent, isRunning, nodes, setNodes, setEdges])
 
+  const loadPreset = useCallback(async (name: string) => {
+    if (!name) return
+    try {
+      const config = await fetch(`/presets/${name}`).then(r => r.json())
+      const hydrated = hydrateFromConfig(config)
+      setNodes(hydrated.nodes)
+      setEdges(hydrated.edges)
+      setSelectedPreset('')
+    } catch { /* ignore */ }
+  }, [setNodes, setEdges])
+
   // ── Context value ─────────────────────────────────────────────────────────
   const callbacks = useMemo<CanvasCallbacks>(() => ({
     onRun: handleRun,
@@ -631,6 +724,32 @@ export default function App() {
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: connected ? '#38a169' : '#e53e3e' }} />
           {connected ? 'Connected' : 'Disconnected'}
         </div>
+
+        {presets.length > 0 && (
+          <>
+            <div style={{ color: '#93a4b8', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+              Load Preset
+            </div>
+            <select
+              value={selectedPreset}
+              onChange={e => { setSelectedPreset(e.target.value); loadPreset(e.target.value) }}
+              disabled={isRunning}
+              style={{
+                width: '100%', background: '#0d1520', color: '#e6edf5',
+                border: '1px solid #2a3a4c', borderRadius: 5,
+                padding: '4px 7px', fontSize: 11, fontFamily: 'inherit',
+              }}
+            >
+              <option value="">Select a preset…</option>
+              {presets.map(p => (
+                <option key={p.name} value={p.name} title={p.description}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+            <hr style={{ border: 'none', borderTop: '1px solid #21262d' }} />
+          </>
+        )}
 
         <hr style={{ border: 'none', borderTop: '1px solid #21262d' }} />
 
