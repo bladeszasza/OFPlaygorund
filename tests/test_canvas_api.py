@@ -141,3 +141,35 @@ async def test_session_initial_returns_config_when_provided() -> None:
     result = response.json()
     assert result is not None
     assert result["nodes"][0]["data"]["policy"] == "SEQUENTIAL"
+
+
+async def test_presets_list_returns_list() -> None:
+    app = build_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/presets/list")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    # _fixture_test.json must appear
+    names = [p["name"] for p in data]
+    assert "_fixture_test" in names
+    first = next(p for p in data if p["name"] == "_fixture_test")
+    assert first["title"] == "Test Fixture"
+    assert first["description"] == "Used by tests only."
+    assert first["policy"] == "SEQUENTIAL"
+
+
+async def test_presets_get_returns_config() -> None:
+    app = build_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/presets/_fixture_test")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["nodes"][0]["type"] == "FloorNode"
+
+
+async def test_presets_get_unknown_returns_404() -> None:
+    app = build_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/presets/does_not_exist")
+    assert response.status_code == 404

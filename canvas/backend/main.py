@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import sys
@@ -112,6 +113,13 @@ async def _cancel_task(task: asyncio.Task[Any] | None) -> None:
     task.cancel()
     with suppress(asyncio.CancelledError):
         await task
+
+
+def _floor_policy_from_config(config: dict) -> str:
+    for node in config.get("nodes", []):
+        if node.get("type") == "FloorNode":
+            return node.get("data", {}).get("policy", "")
+    return ""
 
 
 async def _spawn_agent_for_canvas(
@@ -357,6 +365,31 @@ def build_app(initial_config: dict | None = None) -> FastAPI:
     @app.get("/session/initial")
     async def session_initial() -> dict | None:
         return state.get("initial_config")
+
+    _PRESETS_DIR = Path(__file__).resolve().parents[2] / "canvas" / "presets"
+
+    @app.get("/presets/list")
+    async def presets_list() -> list[dict]:
+        result = []
+        for f in sorted(_PRESETS_DIR.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                result.append({
+                    "name": f.stem,
+                    "title": data.get("_title", f.stem),
+                    "description": data.get("_description", ""),
+                    "policy": _floor_policy_from_config(data),
+                })
+            except Exception:
+                pass
+        return result
+
+    @app.get("/presets/{name}")
+    async def presets_get(name: str) -> dict:
+        path = _PRESETS_DIR / f"{name}.json"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Preset '{name}' not found")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @app.post("/session/start")
     async def session_start(req: StartRequest) -> dict[str, str]:
