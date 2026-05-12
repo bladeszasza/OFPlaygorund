@@ -1,0 +1,19 @@
+{
+  "_title": "Sequential Code Review",
+  "_description": "Three specialist reviewers examine code in sequence: security, performance, then style.",
+  "nodes": [
+    {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SEQUENTIAL", "topic": "", "maxTurns": null, "noHuman": false, "humanName": "Developer", "showFloorEvents": false}},
+    {"id": "conv-main", "type": "ConversationNode", "data": {}},
+    {"id": "human-main", "type": "HumanNode", "data": {"humanName": "Developer"}},
+    {"id": "agent-SecurityReviewer", "type": "AgentNode", "data": {"provider": "anthropic", "name": "SecurityReviewer", "model": "", "systemPrompt": "You are SecurityReviewer, a senior application security engineer. Review code strictly for OWASP Top 10, hardcoded secrets, injection risks, and unsafe API usage. Format your response as SEVERITY: / FINDINGS: / RECOMMENDATION:", "slug": "", "agentType": ""}},
+    {"id": "agent-PerformanceReviewer", "type": "AgentNode", "data": {"provider": "anthropic", "name": "PerformanceReviewer", "model": "", "systemPrompt": "You are PerformanceReviewer, a systems performance engineer. Review code strictly for algorithmic complexity, unnecessary allocations, and I/O patterns. Format: COMPLEXITY: / BOTTLENECKS: / RECOMMENDATION:", "slug": "", "agentType": ""}},
+    {"id": "agent-StyleReviewer", "type": "AgentNode", "data": {"provider": "openai", "name": "StyleReviewer", "model": "", "systemPrompt": "You are StyleReviewer, a senior engineer focused on code quality. Review strictly for idiomatic patterns, naming, and readability. Format: RATING: / ISSUES: / RECOMMENDATION:", "slug": "", "agentType": ""}}
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "human-main"},
+    {"source": "floor-main", "target": "agent-SecurityReviewer"},
+    {"source": "floor-main", "target": "agent-PerformanceReviewer"},
+    {"source": "floor-main", "target": "agent-StyleReviewer"}
+  ]
+}

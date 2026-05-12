@@ -1,0 +1,17 @@
+{
+  "_title": "Simple Two-Agent Chat",
+  "_description": "Sequential conversation between two agents and a human.",
+  "nodes": [
+    {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SEQUENTIAL", "topic": "", "maxTurns": null, "noHuman": false, "humanName": "User", "showFloorEvents": false}},
+    {"id": "conv-main", "type": "ConversationNode", "data": {}},
+    {"id": "human-main", "type": "HumanNode", "data": {"humanName": "User"}},
+    {"id": "agent-Alice", "type": "AgentNode", "data": {"provider": "anthropic", "name": "Alice", "model": "", "systemPrompt": "You are Alice, a thoughtful and curious AI assistant.", "slug": "", "agentType": ""}},
+    {"id": "agent-Bob", "type": "AgentNode", "data": {"provider": "openai", "name": "Bob", "model": "", "systemPrompt": "You are Bob, a pragmatic and direct AI assistant.", "slug": "", "agentType": ""}}
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "human-main"},
+    {"source": "floor-main", "target": "agent-Alice"},
+    {"source": "floor-main", "target": "agent-Bob"}
+  ]
+}
