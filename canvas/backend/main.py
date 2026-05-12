@@ -243,20 +243,43 @@ async def _run_canvas_session(
             bridge.push_raw({"type": "agent_joined", "name": human.name, "provider": "human"})
             asyncio.create_task(human.run())
 
-        # Seed topic + max_turns watchdog (matches cli.py _run_session logic)
-        if topic or max_turns:
-            async def _orchestrate() -> None:
-                await asyncio.sleep(1.0)
-                if topic:
-                    floor._memory_store.seed_goal(topic)
-                    from ofp_playground.cli import _seed_topic as _st
-                    await _st(topic, floor, bus)
-                if max_turns:
-                    while floor.history.__len__() < max_turns:
-                        await asyncio.sleep(2.0)
-                    floor.stop()
+        # Seed topic + max_turns watchdog + initial floor kick-start.
+        # Always run _orchestrate so the floor is kick-started even without a topic.
+        human_agent = state.get("human_agent")
 
-            asyncio.create_task(_orchestrate())
+        async def _orchestrate() -> None:
+            await asyncio.sleep(1.0)
+            if topic:
+                floor._memory_store.seed_goal(topic)
+                from ofp_playground.cli import _seed_topic as _st
+                await _st(topic, floor, bus)
+                # If the human holds the floor in sequential mode, yield it so
+                # agents can respond to the seeded topic; human re-queues for next turn.
+                if human_agent is not None and floor.floor_holder == human_agent.speaker_uri:
+                    human_agent._has_floor = False
+                    await human_agent.yield_floor()
+                    await human_agent.request_floor()
+                await asyncio.sleep(0.2)
+
+            # Grant floor to the orchestrator / director / first agent so the
+            # conversation kicks off even without an initial human message.
+            if floor._orchestrator_uri:
+                await floor.grant_to(floor._orchestrator_uri)
+            elif floor._director_uri and not floor._showrunner_uri:
+                await floor.grant_to(floor._director_uri)
+            elif no_human and not topic:
+                # Autonomous session with no topic: grant to the first registered
+                # agent so the conversation can start on its own.
+                first_uri = next(iter(floor._agents), None)
+                if first_uri:
+                    await floor.grant_to(first_uri)
+
+            if max_turns:
+                while floor.history.__len__() < max_turns:
+                    await asyncio.sleep(2.0)
+                floor.stop()
+
+        asyncio.create_task(_orchestrate())
 
         await floor.run()
     finally:
@@ -265,7 +288,7 @@ async def _run_canvas_session(
 
 # ── App factory ────────────────────────────────────────────────────────────────
 
-def build_app() -> FastAPI:
+def build_app(initial_config: dict | None = None) -> FastAPI:
     bridge = SessionBridge()
     settings = Settings()
     state: dict[str, Any] = {
@@ -277,6 +300,7 @@ def build_app() -> FastAPI:
         "registry": None,
         "collector": None,
         "human_agent": None,
+        "initial_config": initial_config,
     }
 
     @asynccontextmanager
@@ -329,6 +353,10 @@ def build_app() -> FastAPI:
             "running": bool(session_task and not session_task.done()),
             "session_id": state.get("session_id"),
         }
+
+    @app.get("/session/initial")
+    async def session_initial() -> dict | None:
+        return state.get("initial_config")
 
     @app.post("/session/start")
     async def session_start(req: StartRequest) -> dict[str, str]:

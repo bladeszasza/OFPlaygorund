@@ -117,3 +117,27 @@ async def test_agent_type_field_accepted_in_start(app) -> None:
         response = await client.post("/session/start", json=payload)
     # Just check it doesn't 422 — agentType must be accepted
     assert response.status_code != 422
+
+
+async def test_session_initial_returns_none_when_no_config() -> None:
+    app = build_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/session/initial")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_session_initial_returns_config_when_provided() -> None:
+    config = {
+        "nodes": [
+            {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SEQUENTIAL"}},
+        ],
+        "edges": [],
+    }
+    app = build_app(initial_config=config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/session/initial")
+    assert response.status_code == 200
+    result = response.json()
+    assert result is not None
+    assert result["nodes"][0]["data"]["policy"] == "SEQUENTIAL"
