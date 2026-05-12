@@ -85,9 +85,28 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
     spec = spec.strip()
 
     if spec.startswith("-"):
-        # Flag-based format: find each -flag and collect its value up to the next -flag
+        # Flag-based format: find each -flag and collect its value up to the next -flag.
+        # Ignore flag-like tokens embedded inside directive-style square-bracket blocks
+        # so orchestrator mission text can include examples like [BREAKOUT_AGENT -provider ...].
         flag_re = re.compile(r"(?<!\w)-(provider|name|system|model|type|max-tokens|timeout|max-retries)\s+", re.IGNORECASE)
-        matches = list(flag_re.finditer(spec))
+        bracket_spans: list[tuple[int, int]] = []
+        bracket_depth = 0
+        span_start: Optional[int] = None
+        for index, char in enumerate(spec):
+            if char == "[":
+                if bracket_depth == 0:
+                    span_start = index
+                bracket_depth += 1
+            elif char == "]" and bracket_depth:
+                bracket_depth -= 1
+                if bracket_depth == 0 and span_start is not None:
+                    bracket_spans.append((span_start, index + 1))
+                    span_start = None
+
+        def _inside_brackets(position: int) -> bool:
+            return any(start <= position < end for start, end in bracket_spans)
+
+        matches = [match for match in flag_re.finditer(spec) if not _inside_brackets(match.start())]
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
 
@@ -180,6 +199,67 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
             model_override = None
     description = _resolve_agent_slug(description)
     return agent_type, name, description, model_override, None, None, 0
+
+
+def _build_canvas_config(
+    policy: str | None,
+    agents: tuple[str, ...],
+    topic: str | None,
+    no_human: bool,
+    max_turns: Optional[int],
+    human_name: str,
+) -> dict:
+    """Build a StartRequest-shaped dict from CLI flags for canvas pre-population."""
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    floor_id = "floor-main"
+    conv_id = "conv-main"
+
+    nodes.append({
+        "id": floor_id,
+        "type": "FloorNode",
+        "data": {
+            "policy": (policy or "SEQUENTIAL").upper(),
+            "topic": topic or "",
+            "maxTurns": max_turns,
+            "noHuman": no_human,
+            "humanName": human_name,
+            "showFloorEvents": False,
+        },
+    })
+    nodes.append({"id": conv_id, "type": "ConversationNode", "data": {}})
+    edges.append({"source": floor_id, "target": conv_id})
+
+    for spec in agents:
+        agent_type, name, description, model_override, _mt, _to, _mr = _parse_agent_spec(spec)
+        parts = agent_type.split(":", 1)
+        provider = parts[0]
+        subtype = parts[1] if len(parts) > 1 else ""
+        agent_id = f"agent-{name}"
+        nodes.append({
+            "id": agent_id,
+            "type": "AgentNode",
+            "data": {
+                "provider": provider,
+                "name": name,
+                "model": model_override or "",
+                "systemPrompt": description,
+                "slug": "",
+                "agentType": subtype,
+            },
+        })
+        edges.append({"source": floor_id, "target": agent_id})
+
+    if not no_human:
+        human_id = "human-main"
+        nodes.append({
+            "id": human_id,
+            "type": "HumanNode",
+            "data": {"humanName": human_name},
+        })
+        edges.append({"source": floor_id, "target": human_id})
+
+    return {"nodes": nodes, "edges": edges}
 
 
 def _resolve_agent_slug(description: str) -> str:
@@ -1328,6 +1408,73 @@ def web(ctx: click.Context, policy: str, agents: tuple, topic: Optional[str],
     finally:
         import os
         os._exit(0)
+
+
+@main.command("canvas")
+@click.option("--port", default=8765, show_default=True, help="Port for the canvas server.")
+@click.option("--host", default="localhost", show_default=True, help="Host to bind.")
+@click.option("--open/--no-open", "open_browser", default=True, show_default=True)
+@click.option("--policy", "-p", default=None, help="Floor policy (SEQUENTIAL, ROUND_ROBIN, FREE_FOR_ALL, MODERATED, SHOWRUNNER_DRIVEN).")
+@click.option("--agent", "-a", "agents", multiple=True, metavar="SPEC", help="Agent spec (same format as 'start').")
+@click.option("--topic", "-t", default=None, help="Initial topic seeded to the floor.")
+@click.option("--no-human", is_flag=True, default=False, help="Omit the human participant node.")
+@click.option("--max-turns", "-n", default=None, type=int, help="Stop after this many turns.")
+@click.option("--human-name", default="User", show_default=True, help="Display name for the human node.")
+@click.pass_context
+def canvas(
+    ctx: click.Context,
+    port: int,
+    host: str,
+    open_browser: bool,
+    policy: str | None,
+    agents: tuple[str, ...],
+    topic: str | None,
+    no_human: bool,
+    max_turns: int | None,
+    human_name: str,
+) -> None:
+    """Launch the visual canvas for building and running floors.
+
+    Accepts the same --policy / --agent / --topic flags as 'start'.
+    When provided, the canvas opens pre-populated with those nodes.
+    Press Run to start the session.
+    """
+    import sys
+    import threading
+    import webbrowser
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    try:
+        import uvicorn
+        from canvas.backend.main import build_app
+    except ImportError as exc:
+        raise click.ClickException(
+            "Canvas dependencies not installed. Run: pip install -e '.[canvas]'"
+        ) from exc
+
+    initial_config = None
+    if agents or policy or topic:
+        initial_config = _build_canvas_config(
+            policy=policy,
+            agents=agents,
+            topic=topic,
+            no_human=no_human,
+            max_turns=max_turns,
+            human_name=human_name,
+        )
+
+    app = build_app(initial_config=initial_config)
+    url = f"http://{host}:{port}"
+
+    if open_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    click.echo(f"Canvas running at {url}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 async def _run_web_session(

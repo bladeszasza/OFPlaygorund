@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from click.testing import CliRunner
+
 from ofp_playground import cli
 
 
@@ -42,3 +44,99 @@ def test_parse_agent_spec_allows_slug_prefix_with_extra_text(monkeypatch):
     assert name == "DevGamma"
     assert description.startswith("BASE SOUL\n\nAdditional instructions:\nKeep hero.z at 0.")
     assert model_override == "gpt-5.4"
+
+
+def test_parse_agent_spec_ignores_flags_inside_bracketed_directives():
+    agent_type, name, description, model_override, _, _, _ = cli._parse_agent_spec(
+        "-provider google -type orchestrator -name SeriesDirector -system Use this breakout template exactly: [BREAKOUT_AGENT -provider hf -model MiniMaxAI/MiniMax-M2.7 -name <CharacterName2> -system <paste full memory here>] -model gemini-3.1-flash-lite-preview"
+    )
+
+    assert agent_type == "google:orchestrator"
+    assert name == "SeriesDirector"
+    assert model_override == "gemini-3.1-flash-lite-preview"
+    assert "[BREAKOUT_AGENT -provider hf -model MiniMaxAI/MiniMax-M2.7" in description
+    assert "-name <CharacterName2>" in description
+
+
+def test_canvas_command_exists():
+    runner = CliRunner()
+
+    result = runner.invoke(cli.main, ["canvas", "--help"])
+
+    assert result.exit_code == 0
+    assert "--port" in result.output
+    assert "--host" in result.output
+
+
+def test_build_canvas_config_colon_format():
+    config = cli._build_canvas_config(
+        policy="free_for_all",
+        agents=("anthropic:Alice:You are Alice.", "openai:Bob:You are Bob."),
+        topic="test topic",
+        no_human=True,
+        max_turns=10,
+        human_name="User",
+    )
+    node_types = {n["id"]: n["type"] for n in config["nodes"]}
+    assert node_types["floor-main"] == "FloorNode"
+    assert node_types["conv-main"] == "ConversationNode"
+    assert node_types["agent-Alice"] == "AgentNode"
+    assert node_types["agent-Bob"] == "AgentNode"
+    # No HumanNode when no_human=True
+    assert all(n["type"] != "HumanNode" for n in config["nodes"])
+    floor = next(n for n in config["nodes"] if n["id"] == "floor-main")
+    assert floor["data"]["policy"] == "FREE_FOR_ALL"
+    assert floor["data"]["topic"] == "test topic"
+    assert floor["data"]["maxTurns"] == 10
+    assert floor["data"]["noHuman"] is True
+    alice = next(n for n in config["nodes"] if n["id"] == "agent-Alice")
+    assert alice["data"]["provider"] == "anthropic"
+    assert alice["data"]["name"] == "Alice"
+    assert "Alice" in alice["data"]["systemPrompt"]
+
+
+def test_build_canvas_config_flag_format():
+    config = cli._build_canvas_config(
+        policy="SEQUENTIAL",
+        agents=("-provider anthropic -name Carol -system You are Carol.",),
+        topic=None,
+        no_human=False,
+        max_turns=None,
+        human_name="Dev",
+    )
+    node_types = {n["id"]: n["type"] for n in config["nodes"]}
+    assert node_types["agent-Carol"] == "AgentNode"
+    # HumanNode present when no_human=False
+    assert any(n["type"] == "HumanNode" for n in config["nodes"])
+    human = next(n for n in config["nodes"] if n["type"] == "HumanNode")
+    assert human["data"]["humanName"] == "Dev"
+
+
+def test_build_canvas_config_edges_connect_floor_to_agents():
+    config = cli._build_canvas_config(
+        policy="SEQUENTIAL",
+        agents=("anthropic:Alice", "openai:Bob"),
+        topic=None,
+        no_human=True,
+        max_turns=None,
+        human_name="User",
+    )
+    edge_targets = {e["target"] for e in config["edges"]}
+    assert "conv-main" in edge_targets
+    assert "agent-Alice" in edge_targets
+    assert "agent-Bob" in edge_targets
+    assert all(e["source"] == "floor-main" for e in config["edges"])
+
+
+def test_build_canvas_config_agent_type_subtype():
+    config = cli._build_canvas_config(
+        policy="SHOWRUNNER_DRIVEN",
+        agents=("-provider anthropic -type orchestrator -name Director -system You direct.",),
+        topic=None,
+        no_human=True,
+        max_turns=None,
+        human_name="User",
+    )
+    director = next(n for n in config["nodes"] if n["data"].get("name") == "Director")
+    assert director["data"]["agentType"] == "orchestrator"
+    assert director["data"]["provider"] == "anthropic"
