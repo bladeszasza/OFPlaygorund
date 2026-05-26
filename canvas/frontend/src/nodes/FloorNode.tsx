@@ -75,7 +75,7 @@ export function FloorNode({ data }: { data: FloorNodeData }) {
         />
       </label>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <label style={{ flex: 1 }}>
           <div style={{ color: '#93a4b8', fontSize: 11, marginBottom: 3 }}>Max turns</div>
           <input
@@ -92,7 +92,26 @@ export function FloorNode({ data }: { data: FloorNodeData }) {
             }}
           />
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-end', gap: 5, paddingBottom: 4 }}>
+        <label style={{ flex: 1 }}>
+          <div style={{ color: '#93a4b8', fontSize: 11, marginBottom: 3 }}>MOT (ms)</div>
+          <input
+            type="number"
+            value={data.mot || ''}
+            min={0}
+            step={100}
+            onChange={(e) => onFloorChange({ mot: e.target.value ? Number(e.target.value) : 0 })}
+            placeholder="0"
+            style={{
+              width: '100%', background: '#0d1520', color: '#e6edf5',
+              border: '1px solid #2a3a4c', borderRadius: 6, padding: '4px 8px',
+              fontSize: 12, boxSizing: 'border-box',
+            }}
+          />
+        </label>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <input
             type="checkbox"
             checked={data.noHuman}

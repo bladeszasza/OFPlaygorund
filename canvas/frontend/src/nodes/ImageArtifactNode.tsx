@@ -5,6 +5,8 @@ import type { ArtifactNodeData } from '../types'
 
 export function ImageArtifactNode({ data }: { data: ArtifactNodeData }) {
   const [lightbox, setLightbox] = useState(false)
+  const [imgError, setImgError] = useState(false)
+  const filename = data.url ? data.url.split('/').pop() ?? data.label : data.label
 
   return (
     <div style={{
@@ -25,13 +27,30 @@ export function ImageArtifactNode({ data }: { data: ArtifactNodeData }) {
           {data.label}
         </span>
       </div>
-      {data.url && (
+      {data.url && !imgError && (
         <img
           src={data.url}
           alt={data.label}
           onClick={() => setLightbox(true)}
+          onError={() => setImgError(true)}
           style={{ width: '100%', borderRadius: 5, cursor: 'pointer', display: 'block' }}
         />
+      )}
+      {data.url && imgError && (
+        <div style={{
+          background: '#1a1230', border: '1px dashed #8b5cf666',
+          borderRadius: 5, padding: '10px 8px', textAlign: 'center',
+          color: '#7c6fa0', fontSize: 10, lineHeight: 1.5,
+        }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>🖼️</div>
+          <div style={{ wordBreak: 'break-all' }}>{filename}</div>
+          <a
+            href={data.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: '#8b5cf6', fontSize: 9 }}
+          >open file ↗</a>
+        </div>
       )}
       {lightbox && (
         <dialog

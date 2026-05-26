@@ -53,6 +53,7 @@ class NodeData(BaseModel):
     slug: str = ""
     humanName: str = "User"
     agentType: str = ""
+    remoteTarget: str = ""
 
 
 class CanvasNode(BaseModel):
@@ -78,6 +79,7 @@ class AddAgentRequest(BaseModel):
     systemPrompt: str = ""
     slug: str = ""
     agentType: str = ""
+    remoteTarget: str = ""
 
 
 class HumanMessageRequest(BaseModel):
@@ -153,11 +155,38 @@ async def _spawn_agent_for_canvas(
             settings=settings,
             model_override=model or None,
         )
-        bridge.register_agent(f"tag:ofp-playground.local,2025:llm-{name}", name)
+        bridge.register_agent(f"tag:ofp-playground.local,2025:llm-{name.lower().replace(' ', '-')}", name)
         bridge.push_raw({"type": "agent_joined", "name": name, "provider": provider})
     except Exception as exc:
         logger.error("Failed to spawn agent %s: %s", name, exc)
         bridge.push_raw({"type": "error", "agent": name, "message": str(exc), "retryable": False})
+        raise
+
+
+async def _spawn_remote_for_canvas(
+    target: str,
+    floor: FloorManager,
+    bus: MessageBus,
+    registry: AgentRegistry,
+    renderer: TerminalRenderer,
+    bridge: SessionBridge,
+) -> None:
+    """Connect a remote OFP agent (by slug or URL) and register it with the bridge."""
+    from ofp_playground.cli import _connect_remote_agent, _resolve_remote
+
+    display_name, _url = _resolve_remote(target)
+    bridge.push_raw({"type": "agent_spawning", "name": display_name, "provider": "remote"})
+    try:
+        await _connect_remote_agent(target, floor, bus, registry, renderer)
+        remote_uri = f"tag:ofp-playground.local,2025:remote-{display_name.lower().replace(' ', '-')}"
+        bridge.register_agent(remote_uri, display_name)
+        bridge.push_raw({"type": "agent_joined", "name": display_name, "provider": "remote"})
+    except Exception as exc:
+        logger.error("Failed to connect remote agent %s: %s", target, exc)
+        bridge.push_raw({
+            "type": "error", "agent": display_name,
+            "message": str(exc), "retryable": False,
+        })
         raise
 
 
@@ -204,24 +233,41 @@ async def _run_canvas_session(
         spawn_tasks = []
         for node in agent_nodes:
             d = node.data
-            if not d.provider or not d.name:
+            if not d.provider:
                 continue
-            description = d.systemPrompt or d.slug or f"I am {d.name}, an AI assistant."
-            spawn_tasks.append(
-                _spawn_agent_for_canvas(
-                    provider=d.provider,
-                    name=d.name,
-                    description=description,
-                    model=d.model,
-                    agent_type=d.agentType,
-                    floor=floor,
-                    bus=bus,
-                    registry=registry,
-                    renderer=renderer,
-                    settings=settings,
-                    bridge=bridge,
+            if d.provider == "remote":
+                target = d.remoteTarget or d.name
+                if not target:
+                    continue
+                spawn_tasks.append(
+                    _spawn_remote_for_canvas(
+                        target=target,
+                        floor=floor,
+                        bus=bus,
+                        registry=registry,
+                        renderer=renderer,
+                        bridge=bridge,
+                    )
                 )
-            )
+            else:
+                if not d.name:
+                    continue
+                description = d.systemPrompt or d.slug or f"I am {d.name}, an AI assistant."
+                spawn_tasks.append(
+                    _spawn_agent_for_canvas(
+                        provider=d.provider,
+                        name=d.name,
+                        description=description,
+                        model=d.model,
+                        agent_type=d.agentType,
+                        floor=floor,
+                        bus=bus,
+                        registry=registry,
+                        renderer=renderer,
+                        settings=settings,
+                        bridge=bridge,
+                    )
+                )
 
         if spawn_tasks:
             results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
@@ -458,22 +504,33 @@ def build_app(initial_config: dict | None = None) -> FastAPI:
 
         null_console = Console(file=io.StringIO(), force_terminal=False, color_system=None)
         renderer = TerminalRenderer(console=null_console, show_floor_events=False)
-        description = req.systemPrompt or f"I am {req.name}, an AI assistant."
 
         try:
-            await _spawn_agent_for_canvas(
-                provider=req.provider,
-                name=req.name,
-                description=description,
-                model=req.model,
-                agent_type=req.agentType,
-                floor=floor,
-                bus=bus,
-                registry=registry,
-                renderer=renderer,
-                settings=settings,
-                bridge=bridge,
-            )
+            if req.provider == "remote":
+                target = req.remoteTarget or req.name
+                await _spawn_remote_for_canvas(
+                    target=target,
+                    floor=floor,
+                    bus=bus,
+                    registry=registry,
+                    renderer=renderer,
+                    bridge=bridge,
+                )
+            else:
+                description = req.systemPrompt or f"I am {req.name}, an AI assistant."
+                await _spawn_agent_for_canvas(
+                    provider=req.provider,
+                    name=req.name,
+                    description=description,
+                    model=req.model,
+                    agent_type=req.agentType,
+                    floor=floor,
+                    bus=bus,
+                    registry=registry,
+                    renderer=renderer,
+                    settings=settings,
+                    bridge=bridge,
+                )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -537,6 +594,14 @@ def build_app(initial_config: dict | None = None) -> FastAPI:
         return FileResponse(resolved)
 
     # ── Agent library & model catalog ─────────────────────────────────────────
+
+    @app.get("/remote-agents/list")
+    async def remote_agents_list() -> list[dict]:
+        from ofp_playground.agents.remote import KNOWN_REMOTE_AGENTS
+        return [
+            {"slug": slug, "name": info[0], "description": info[2]}
+            for slug, info in KNOWN_REMOTE_AGENTS.items()
+        ]
 
     @app.get("/agents/list")
     async def agents_list() -> list[dict]:

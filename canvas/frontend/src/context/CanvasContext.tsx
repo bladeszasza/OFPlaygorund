@@ -1,6 +1,6 @@
 // canvas/frontend/src/context/CanvasContext.tsx
 import { createContext, useContext } from 'react'
-import type { FloorNodeData } from '../types'
+import type { FloorNodeData, FloorEventEntry } from '../types'
 
 export interface CanvasCallbacks {
   onRun: () => void
@@ -8,6 +8,7 @@ export interface CanvasCallbacks {
   onFloorChange: (patch: Partial<FloorNodeData>) => void
   onKick: (name: string) => void
   onSend: (text: string) => void
+  onSelectEvent: (event: FloorEventEntry | null) => void
   sessionRunning: boolean
 }
 

@@ -23,6 +23,9 @@ import { FloorNode } from './nodes/FloorNode'
 import { AgentNode } from './nodes/AgentNode'
 import { HumanNode } from './nodes/HumanNode'
 import { ConversationNode } from './nodes/ConversationNode'
+import { TraceTimelineNode } from './nodes/TraceTimelineNode'
+import { ConversationChatNode } from './nodes/ConversationChatNode'
+import { EventInspectorNode } from './nodes/EventInspectorNode'
 import { ImageArtifactNode } from './nodes/ImageArtifactNode'
 import { CodeArtifactNode } from './nodes/CodeArtifactNode'
 import { PhaseArtifactNode } from './nodes/PhaseArtifactNode'
@@ -32,10 +35,12 @@ import { SlugCombobox } from './components/SlugCombobox'
 import { useSlugs } from './hooks/useSlugs'
 import { useModels } from './hooks/useModels'
 import { usePresets } from './hooks/usePresets'
+import { useRemoteAgents } from './hooks/useRemoteAgents'
 import { useSession } from './hooks/useSession'
 
 import type {
   FloorNodeData, AgentNodeData, HumanNodeData, ConversationNodeData,
+  ConversationChatNodeData, EventInspectorNodeData,
   ArtifactNodeData, GlowEdgeData, WSEvent, FloorPolicy, AgentFloorState, Message,
   FloorEventEntry,
 } from './types'
@@ -47,6 +52,9 @@ const NODE_TYPES: NodeTypes = {
   AgentNode,
   HumanNode,
   ConversationNode,
+  TraceTimelineNode,
+  ConversationChatNode,
+  EventInspectorNode,
   ImageArtifactNode,
   CodeArtifactNode,
   PhaseArtifactNode,
@@ -109,19 +117,22 @@ function glowEdge(
 function toFloorEntry(event: WSEvent): FloorEventEntry | null {
   const id = `${Date.now()}-${Math.random()}`
   const ts = Date.now()
+  // Prefer the full OFP envelope JSON when available, fall back to the WS event itself
+  const raw = (event as unknown as Record<string, unknown>).envelope_json as Record<string, unknown> | undefined
+    ?? (event as unknown as Record<string, unknown>)
   switch (event.type) {
     case 'floor_grant':
-      return { id, ts, type: 'floor_grant', agent: event.to, to: event.to }
+      return { id, ts, type: 'floor_grant', agent: event.to, to: event.to, raw }
     case 'floor_revoke':
-      return { id, ts, type: 'floor_revoke', agent: event.from }
+      return { id, ts, type: 'floor_revoke', agent: event.from, raw }
     case 'floor_yield':
-      return { id, ts, type: 'floor_yield', agent: event.from }
+      return { id, ts, type: 'floor_yield', agent: event.from, raw }
     case 'floor_request':
-      return { id, ts, type: 'floor_request', agent: event.from }
+      return { id, ts, type: 'floor_request', agent: event.from, raw }
     case 'utterance':
-      return { id, ts, type: 'utterance', agent: event.sender, preview: event.text.slice(0, 70) }
+      return { id, ts, type: 'utterance', agent: event.sender, preview: event.text.slice(0, 70), raw }
     case 'manifest_published':
-      return { id, ts, type: 'manifest_published', agent: event.agent }
+      return { id, ts, type: 'manifest_published', agent: event.agent, raw }
     default:
       return null
   }
@@ -142,9 +153,12 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FLOOR_ID = 'floor-main'
-const CONV_ID = 'conv-main'
-const LAYOUT_KEY = 'ofp-canvas-layout-v3'   // bumped: glow edge data shape changed
+const FLOOR_ID     = 'floor-main'
+const CONV_ID      = 'conv-main'
+const TIMELINE_ID  = 'timeline-main'
+const CHAT_ID      = 'chat-main'
+const INSPECTOR_ID = 'inspector-main'
+const LAYOUT_KEY   = 'ofp-canvas-layout-v6'  // bumped: inspector + wider chat
 const API = ''
 
 // ── Typed data accessors ──────────────────────────────────────────────────────
@@ -153,8 +167,10 @@ function asFloor(data: unknown): FloorNodeData { return data as unknown as Floor
 function asAgent(data: unknown): AgentNodeData { return data as unknown as AgentNodeData }
 function asHuman(data: unknown): HumanNodeData { return data as unknown as HumanNodeData }
 function asConv(data: unknown): ConversationNodeData { return data as unknown as ConversationNodeData }
+function asChat(data: unknown): ConversationChatNodeData { return data as unknown as ConversationChatNodeData }
 function asArtifact(data: unknown): ArtifactNodeData { return data as unknown as ArtifactNodeData }
 function asGlowEdge(data: unknown): GlowEdgeData { return data as unknown as GlowEdgeData }
+function asInspector(data: unknown): EventInspectorNodeData { return data as unknown as EventInspectorNodeData }
 
 // ── Initial nodes ─────────────────────────────────────────────────────────────
 
@@ -164,7 +180,7 @@ function makeInitialNodes(): Node[] {
       {
         id: FLOOR_ID, type: 'FloorNode', position: { x: 0, y: 0 },
         data: {
-          policy: 'SEQUENTIAL', topic: '', maxTurns: null,
+          policy: 'SEQUENTIAL', topic: '', maxTurns: null, mot: 0,
           showFloorEvents: false, noHuman: true, humanName: 'User',
           sessionState: 'idle', sessionId: null, turnCount: 0, elapsedSecs: 0,
         } satisfies FloorNodeData,
@@ -172,12 +188,30 @@ function makeInitialNodes(): Node[] {
       {
         id: CONV_ID, type: 'ConversationNode', position: { x: 0, y: 0 },
         data: {
-          sessionId: null, policy: '', topic: '', turnCount: 0,
-          eventLog: [],
+          sessionId: null, policy: '', topic: '', turnCount: 0, eventLog: [],
         } satisfies ConversationNodeData,
       },
+      {
+        id: TIMELINE_ID, type: 'TraceTimelineNode', position: { x: 0, y: 0 },
+        data: {
+          sessionId: null, policy: '', topic: '', turnCount: 0, eventLog: [],
+        } satisfies ConversationNodeData,
+      },
+      {
+        id: CHAT_ID, type: 'ConversationChatNode', position: { x: 0, y: 0 },
+        data: { messages: [] } satisfies ConversationChatNodeData,
+      },
+      {
+        id: INSPECTOR_ID, type: 'EventInspectorNode', position: { x: 0, y: 0 },
+        data: { event: null } satisfies EventInspectorNodeData,
+      },
     ],
-    [glowEdge(`e-${FLOOR_ID}-${CONV_ID}`, FLOOR_ID, CONV_ID)]
+    [
+      glowEdge(`e-${FLOOR_ID}-${CONV_ID}`, FLOOR_ID, CONV_ID),
+      glowEdge(`e-${CONV_ID}-${TIMELINE_ID}`, CONV_ID, TIMELINE_ID),
+      glowEdge(`e-${FLOOR_ID}-${CHAT_ID}`, FLOOR_ID, CHAT_ID),
+      glowEdge(`e-${TIMELINE_ID}-${INSPECTOR_ID}`, TIMELINE_ID, INSPECTOR_ID),
+    ]
   )
 }
 
@@ -195,6 +229,7 @@ function hydrateFromConfig(config: { nodes: any[]; edges: any[] }): {
           policy: n.data?.policy ?? 'SEQUENTIAL',
           topic: n.data?.topic ?? '',
           maxTurns: n.data?.maxTurns ?? null,
+          mot: n.data?.mot ?? 0,
           noHuman: n.data?.noHuman ?? true,
           humanName: n.data?.humanName ?? 'User',
           showFloorEvents: false,
@@ -215,6 +250,7 @@ function hydrateFromConfig(config: { nodes: any[]; edges: any[] }): {
           systemPrompt: n.data?.systemPrompt ?? '',
           slug: n.data?.slug ?? '',
           agentType: n.data?.agentType ?? '',
+          remoteTarget: n.data?.remoteTarget ?? '',
           floorState: 'waiting' as const,
           messages: [],
         } satisfies AgentNodeData,
@@ -242,6 +278,32 @@ function hydrateFromConfig(config: { nodes: any[]; edges: any[] }): {
     rfEdges.push(glowEdge(`e-${FLOOR_ID}-${CONV_ID}`, FLOOR_ID, CONV_ID))
   }
 
+  if (!rfNodes.find(n => n.id === TIMELINE_ID)) {
+    rfNodes.push({
+      id: TIMELINE_ID, type: 'TraceTimelineNode', position: { x: 0, y: 0 },
+      data: {
+        sessionId: null, policy: '', topic: '', turnCount: 0, eventLog: [],
+      } satisfies ConversationNodeData,
+    })
+    rfEdges.push(glowEdge(`e-${CONV_ID}-${TIMELINE_ID}`, CONV_ID, TIMELINE_ID))
+  }
+
+  if (!rfNodes.find(n => n.id === CHAT_ID)) {
+    rfNodes.push({
+      id: CHAT_ID, type: 'ConversationChatNode', position: { x: 0, y: 0 },
+      data: { messages: [] } satisfies ConversationChatNodeData,
+    })
+    rfEdges.push(glowEdge(`e-${FLOOR_ID}-${CHAT_ID}`, FLOOR_ID, CHAT_ID))
+  }
+
+  if (!rfNodes.find(n => n.id === INSPECTOR_ID)) {
+    rfNodes.push({
+      id: INSPECTOR_ID, type: 'EventInspectorNode', position: { x: 0, y: 0 },
+      data: { event: null } satisfies EventInspectorNodeData,
+    })
+    rfEdges.push(glowEdge(`e-${TIMELINE_ID}-${INSPECTOR_ID}`, TIMELINE_ID, INSPECTOR_ID))
+  }
+
   return {
     nodes: applyDagreLayout(rfNodes, rfEdges),
     edges: rfEdges,
@@ -254,6 +316,9 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(makeInitialNodes())
   const [edges, setEdges, onEdgesChange] = useEdgesState([
     glowEdge(`e-${FLOOR_ID}-${CONV_ID}`, FLOOR_ID, CONV_ID),
+    glowEdge(`e-${CONV_ID}-${TIMELINE_ID}`, CONV_ID, TIMELINE_ID),
+    glowEdge(`e-${FLOOR_ID}-${CHAT_ID}`, FLOOR_ID, CHAT_ID),
+    glowEdge(`e-${TIMELINE_ID}-${INSPECTOR_ID}`, TIMELINE_ID, INSPECTOR_ID),
   ])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [connected, setConnectedState] = useState(false)
@@ -262,10 +327,14 @@ export default function App() {
   const [modelOpen, setModelOpen] = useState(false)
   const startedAt = useRef<number>(0)
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const motRef = useRef<number>(0)
+  const eventBufferRef = useRef<WSEvent[]>([])
+  const drainingRef = useRef(false)
 
   const slugs = useSlugs()
   const models = useModels()
   const presets = usePresets()
+  const remoteAgents = useRemoteAgents()
   const [selectedPreset, setSelectedPreset] = useState('')
 
   useEffect(() => {
@@ -312,7 +381,7 @@ export default function App() {
     const entry = toFloorEntry(event)
     if (entry) {
       setNodes(nds => nds.map(n => {
-        if (n.id !== CONV_ID) return n
+        if (n.id !== CONV_ID && n.id !== TIMELINE_ID) return n
         const cd = asConv(n.data)
         return {
           ...n,
@@ -338,6 +407,10 @@ export default function App() {
           if (n.type === 'HumanNode' && asHuman(n.data).humanName === event.sender) {
             const nd = asHuman(n.data)
             return { ...n, data: { ...nd, messages: [...nd.messages, msg] } }
+          }
+          if (n.id === CHAT_ID) {
+            const nd = asChat(n.data)
+            return { ...n, data: { ...nd, messages: [...nd.messages.slice(-299), msg] } }
           }
           return n
         }))
@@ -485,7 +558,7 @@ export default function App() {
             data: {
               provider: event.provider as AgentNodeData['provider'],
               name: event.name, model: '', systemPrompt: '', slug: '',
-              agentType: '', floorState: 'spawning', messages: [],
+              agentType: '', remoteTarget: '', floorState: 'spawning', messages: [],
             } satisfies AgentNodeData,
           }
           setEdges((eds) => [...eds, glowEdge(`e-${FLOOR_ID}-${newId}`, FLOOR_ID, newId)])
@@ -594,6 +667,8 @@ export default function App() {
       case 'session_ended': {
         patchNode<FloorNodeData>(FLOOR_ID, { sessionState: 'stopped' })
         patchNode<ConversationNodeData>(CONV_ID, { sessionId: null })
+        patchNode<ConversationNodeData>(TIMELINE_ID, { sessionId: null })
+        // Keep chat messages after session ends so user can read them
         setEdges((eds) => eds.map((e) => ({ ...e, data: { ...asGlowEdge(e.data), active: false } })))
         if (elapsedTimer.current) clearInterval(elapsedTimer.current)
         break
@@ -624,7 +699,10 @@ export default function App() {
       setSessionId(session_id)
       startedAt.current = Date.now()
       patchNode<FloorNodeData>(FLOOR_ID, { sessionState: 'running', sessionId: session_id, turnCount: 0, elapsedSecs: 0 })
-      patchNode<ConversationNodeData>(CONV_ID, { sessionId: session_id, policy: fd.policy, topic: fd.topic, turnCount: 0 })
+      const convPatch = { sessionId: session_id, policy: fd.policy, topic: fd.topic, turnCount: 0, eventLog: [] }
+      patchNode<ConversationNodeData>(CONV_ID, convPatch)
+      patchNode<ConversationNodeData>(TIMELINE_ID, convPatch)
+      patchNode<ConversationChatNodeData>(CHAT_ID, { messages: [] })
       elapsedTimer.current = setInterval(() => {
         patchNode<FloorNodeData>(FLOOR_ID, { elapsedSecs: Math.floor((Date.now() - startedAt.current) / 1000) })
       }, 1000)
@@ -640,21 +718,49 @@ export default function App() {
     if (elapsedTimer.current) clearInterval(elapsedTimer.current)
   }, [patchNode, setEdges])
 
+  // ── MOT event buffering ───────────────────────────────────────────────────────
+  // Keep motRef current so the async drain loop always reads the latest value
+  useEffect(() => {
+    const floorNode = nodes.find(n => n.id === FLOOR_ID)
+    motRef.current = asFloor(floorNode?.data)?.mot ?? 0
+  }, [nodes])
+
+  const drainBuffer = useCallback(async () => {
+    if (drainingRef.current) return
+    drainingRef.current = true
+    while (eventBufferRef.current.length > 0) {
+      const evt = eventBufferRef.current.shift()!
+      handleEvent(evt)
+      const delay = motRef.current
+      if (delay > 0) {
+        await new Promise<void>(r => setTimeout(r, delay))
+      }
+    }
+    drainingRef.current = false
+  }, [handleEvent])
+
+  const onEvent = useCallback((event: WSEvent) => {
+    eventBufferRef.current.push(event)
+    drainBuffer()
+  }, [drainBuffer])
+
   // ── WS ───────────────────────────────────────────────────────────────────────
-  const { connected: wsConnected, sendMessage, kickAgent } = useSession({ sessionId, onEvent: handleEvent })
+  const { connected: wsConnected, sendMessage, kickAgent } = useSession({ sessionId, onEvent })
   useEffect(() => setConnectedState(wsConnected), [wsConnected])
 
   // ── Add agent ─────────────────────────────────────────────────────────────
   const [newAgent, setNewAgent] = useState({
-    provider: 'anthropic', name: '', model: '', systemPrompt: '', slug: '', agentType: '',
+    provider: 'anthropic', name: '', model: '', systemPrompt: '', slug: '', agentType: '', remoteTarget: '',
   })
+  const [remoteQuery, setRemoteQuery] = useState('')
+  const [remoteOpen, setRemoteOpen] = useState(false)
   const [modelQuery, setModelQuery] = useState('')
   const providerModels = (models[newAgent.provider] ?? []).filter(m =>
     modelQuery === '' || m.includes(modelQuery)
   )
 
   const handleAddAgent = useCallback(async () => {
-    if (!newAgent.name.trim()) return
+    if (newAgent.provider === 'remote' ? !newAgent.remoteTarget.trim() : !newAgent.name.trim()) return
     if (isRunning) {
       await fetch(`${API}/session/agent/add`, {
         method: 'POST',
@@ -670,14 +776,16 @@ export default function App() {
           provider: newAgent.provider as AgentNodeData['provider'],
           name: newAgent.name, model: newAgent.model,
           systemPrompt: newAgent.systemPrompt, slug: newAgent.slug,
-          agentType: newAgent.agentType, floorState: 'waiting', messages: [],
+          agentType: newAgent.agentType, remoteTarget: newAgent.remoteTarget,
+          floorState: 'waiting', messages: [],
         } satisfies AgentNodeData,
       }
       setNodes((nds) => [...nds, newNode])
       setEdges((eds) => [...eds, glowEdge(`e-${FLOOR_ID}-${newId}`, FLOOR_ID, newId)])
     }
-    setNewAgent({ provider: 'anthropic', name: '', model: '', systemPrompt: '', slug: '', agentType: '' })
+    setNewAgent({ provider: 'anthropic', name: '', model: '', systemPrompt: '', slug: '', agentType: '', remoteTarget: '' })
     setModelQuery('')
+    setRemoteQuery('')
     setShowAddAgent(false)
   }, [newAgent, isRunning, nodes, setNodes, setEdges])
 
@@ -692,6 +800,10 @@ export default function App() {
     } catch { /* ignore */ }
   }, [setNodes, setEdges])
 
+  const handleSelectEvent = useCallback((event: FloorEventEntry | null) => {
+    patchNode<EventInspectorNodeData>(INSPECTOR_ID, { event })
+  }, [patchNode])
+
   // ── Context value ─────────────────────────────────────────────────────────
   const callbacks = useMemo<CanvasCallbacks>(() => ({
     onRun: handleRun,
@@ -699,8 +811,9 @@ export default function App() {
     onFloorChange: (patch) => patchNode<FloorNodeData>(FLOOR_ID, patch),
     onKick: kickAgent,
     onSend: sendMessage,
+    onSelectEvent: handleSelectEvent,
     sessionRunning: isRunning,
-  }), [handleRun, handleStop, patchNode, kickAgent, sendMessage, isRunning])
+  }), [handleRun, handleStop, patchNode, kickAgent, sendMessage, handleSelectEvent, isRunning])
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(
@@ -775,76 +888,139 @@ export default function App() {
             {/* Provider */}
             <select
               value={newAgent.provider}
-              onChange={(e) => setNewAgent((a) => ({ ...a, provider: e.target.value }))}
+              onChange={(e) => setNewAgent((a) => ({ ...a, provider: e.target.value, remoteTarget: '', name: '' }))}
               style={inputStyle}
             >
               <option value="anthropic">Anthropic</option>
               <option value="openai">OpenAI</option>
               <option value="google">Google</option>
               <option value="huggingface">HuggingFace</option>
+              <option value="remote">Remote OFP</option>
             </select>
 
-            {/* Type */}
-            <select
-              value={newAgent.agentType}
-              onChange={(e) => setNewAgent((a) => ({ ...a, agentType: e.target.value }))}
-              style={inputStyle}
-            >
-              {TASK_SUBTYPES.map((t) => (
-                <option key={t} value={t}>{t === '' ? '(default)' : t}</option>
-              ))}
-            </select>
-
-            {/* Name */}
-            <input
-              type="text"
-              placeholder="Name (required)"
-              value={newAgent.name}
-              onChange={(e) => setNewAgent((a) => ({ ...a, name: e.target.value }))}
-              style={inputStyle}
-            />
-
-            {/* Model with suggestions */}
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                placeholder="Model (optional)"
-                value={newAgent.model}
-                onChange={(e) => { setNewAgent((a) => ({ ...a, model: e.target.value })); setModelQuery(e.target.value) }}
-                onFocus={() => setModelOpen(true)}
-                onBlur={() => setTimeout(() => setModelOpen(false), 150)}
-                style={inputStyle}
-              />
-              {modelOpen && providerModels.length > 0 && (
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 3px)', left: 0, right: 0,
-                  background: '#1a2332', border: '1px solid #2a4060', borderRadius: 6,
-                  zIndex: 100, overflow: 'hidden', boxShadow: '0 4px 16px #00000077',
-                }}>
-                  {providerModels.map((m) => (
-                    <div
-                      key={m}
-                      onMouseDown={() => { setNewAgent((a) => ({ ...a, model: m })); setModelOpen(false) }}
-                      style={{ padding: '5px 10px', fontSize: 10, cursor: 'pointer', color: '#93a4b8' }}
-                    >
-                      {m}
+            {newAgent.provider === 'remote' ? (
+              <>
+                {/* Remote target: slug or URL with known-slug suggestions */}
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Slug (e.g. polly) or URL"
+                    value={newAgent.remoteTarget}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      const match = remoteAgents.find(r => r.slug === v)
+                      setNewAgent((a) => ({
+                        ...a,
+                        remoteTarget: v,
+                        name: match ? match.name : a.name,
+                      }))
+                      setRemoteQuery(v)
+                    }}
+                    onFocus={() => setRemoteOpen(true)}
+                    onBlur={() => setTimeout(() => setRemoteOpen(false), 150)}
+                    style={inputStyle}
+                  />
+                  {remoteOpen && remoteAgents.filter(r =>
+                    !remoteQuery || r.slug.includes(remoteQuery) || r.name.toLowerCase().includes(remoteQuery.toLowerCase())
+                  ).length > 0 && (
+                    <div style={{
+                      position: 'absolute', top: 'calc(100% + 3px)', left: 0, right: 0,
+                      background: '#1a2332', border: '1px solid #2a4060', borderRadius: 6,
+                      zIndex: 100, overflow: 'hidden', boxShadow: '0 4px 16px #00000077',
+                    }}>
+                      {remoteAgents
+                        .filter(r => !remoteQuery || r.slug.includes(remoteQuery) || r.name.toLowerCase().includes(remoteQuery.toLowerCase()))
+                        .map((r) => (
+                          <div
+                            key={r.slug}
+                            onMouseDown={() => {
+                              setNewAgent((a) => ({ ...a, remoteTarget: r.slug, name: r.name }))
+                              setRemoteQuery('')
+                              setRemoteOpen(false)
+                            }}
+                            style={{ padding: '5px 10px', fontSize: 10, cursor: 'pointer', color: '#93a4b8' }}
+                          >
+                            <span style={{ color: '#58a6ff', fontWeight: 600 }}>{r.slug}</span>
+                            {' — '}{r.name}
+                          </div>
+                        ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
+                {/* Display name (auto-filled from slug) */}
+                <input
+                  type="text"
+                  placeholder="Display name (auto-filled)"
+                  value={newAgent.name}
+                  onChange={(e) => setNewAgent((a) => ({ ...a, name: e.target.value }))}
+                  style={inputStyle}
+                />
+              </>
+            ) : (
+              <>
+                {/* Type */}
+                <select
+                  value={newAgent.agentType}
+                  onChange={(e) => setNewAgent((a) => ({ ...a, agentType: e.target.value }))}
+                  style={inputStyle}
+                >
+                  {TASK_SUBTYPES.map((t) => (
+                    <option key={t} value={t}>{t === '' ? '(default)' : t}</option>
+                  ))}
+                </select>
 
-            {/* Slug/system prompt with autocomplete */}
-            <SlugCombobox
-              value={newAgent.systemPrompt || newAgent.slug}
-              onChange={(v) => setNewAgent((a) => ({
-                ...a,
-                systemPrompt: v.startsWith('@') ? '' : v,
-                slug: v.startsWith('@') ? v : '',
-              }))}
-              slugs={slugs}
-              style={inputStyle}
-            />
+                {/* Name */}
+                <input
+                  type="text"
+                  placeholder="Name (required)"
+                  value={newAgent.name}
+                  onChange={(e) => setNewAgent((a) => ({ ...a, name: e.target.value }))}
+                  style={inputStyle}
+                />
+
+                {/* Model with suggestions */}
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="Model (optional)"
+                    value={newAgent.model}
+                    onChange={(e) => { setNewAgent((a) => ({ ...a, model: e.target.value })); setModelQuery(e.target.value) }}
+                    onFocus={() => setModelOpen(true)}
+                    onBlur={() => setTimeout(() => setModelOpen(false), 150)}
+                    style={inputStyle}
+                  />
+                  {modelOpen && providerModels.length > 0 && (
+                    <div style={{
+                      position: 'absolute', top: 'calc(100% + 3px)', left: 0, right: 0,
+                      background: '#1a2332', border: '1px solid #2a4060', borderRadius: 6,
+                      zIndex: 100, overflow: 'hidden', boxShadow: '0 4px 16px #00000077',
+                    }}>
+                      {providerModels.map((m) => (
+                        <div
+                          key={m}
+                          onMouseDown={() => { setNewAgent((a) => ({ ...a, model: m })); setModelOpen(false) }}
+                          style={{ padding: '5px 10px', fontSize: 10, cursor: 'pointer', color: '#93a4b8' }}
+                        >
+                          {m}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Slug/system prompt with autocomplete */}
+                <SlugCombobox
+                  value={newAgent.systemPrompt || newAgent.slug}
+                  onChange={(v) => setNewAgent((a) => ({
+                    ...a,
+                    systemPrompt: v.startsWith('@') ? '' : v,
+                    slug: v.startsWith('@') ? v : '',
+                  }))}
+                  slugs={slugs}
+                  style={inputStyle}
+                />
+              </>
+            )}
 
             <button
               onClick={handleAddAgent}
@@ -886,6 +1062,8 @@ export default function App() {
             nodeTypes={NODE_TYPES}
             edgeTypes={EDGE_TYPES}
             fitView
+            minZoom={0.05}
+            maxZoom={2}
             proOptions={{ hideAttribution: true }}
             style={{ background: '#0d1117' }}
           >

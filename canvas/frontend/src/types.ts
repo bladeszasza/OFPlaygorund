@@ -7,7 +7,7 @@ export type FloorPolicy =
   | 'FREE_FOR_ALL'
   | 'SHOWRUNNER_DRIVEN'
 
-export type AgentProvider = 'anthropic' | 'openai' | 'google' | 'huggingface'
+export type AgentProvider = 'anthropic' | 'openai' | 'google' | 'huggingface' | 'remote'
 
 export type SessionState = 'idle' | 'running' | 'stopped'
 
@@ -34,12 +34,18 @@ export interface FloorEventEntry {
   to?: string
   preview?: string
   ts: number
+  raw?: Record<string, unknown>   // full WSEvent payload for inspector
+}
+
+export interface EventInspectorNodeData {
+  event: FloorEventEntry | null
 }
 
 export interface FloorNodeData {
   policy: FloorPolicy
   topic: string
   maxTurns: number | null
+  mot: number             // minimum observation time between events in ms (0 = no delay)
   showFloorEvents: boolean
   noHuman: boolean
   humanName: string
@@ -56,6 +62,7 @@ export interface AgentNodeData {
   systemPrompt: string
   slug: string
   agentType: string          // maps to TASK_SUBTYPES, '' = text-generation
+  remoteTarget: string       // slug or URL for remote agents
   floorState: AgentFloorState
   messages: Message[]
   errorMessage?: string
@@ -72,6 +79,10 @@ export interface ConversationNodeData {
   topic: string
   turnCount: number
   eventLog: FloorEventEntry[]
+}
+
+export interface ConversationChatNodeData {
+  messages: Message[]
 }
 
 export interface ArtifactNodeData {
@@ -106,12 +117,12 @@ export interface ArtifactCardData {
 // ── WebSocket event union ─────────────────────────────────────────────────────
 
 export type WSEvent =
-  | { type: 'utterance'; sender: string; sender_uri: string; text: string; media: { type: string; url: string } | null }
-  | { type: 'floor_grant'; to: string }
-  | { type: 'floor_revoke'; from: string }
-  | { type: 'floor_request'; from: string }
-  | { type: 'floor_yield'; from: string }
-  | { type: 'manifest_published'; agent: string }
+  | { type: 'utterance'; sender: string; sender_uri: string; text: string; media: { type: string; url: string } | null; envelope_json?: Record<string, unknown> }
+  | { type: 'floor_grant'; to: string; to_uri?: string; envelope_json?: Record<string, unknown> }
+  | { type: 'floor_revoke'; from: string; from_uri?: string; envelope_json?: Record<string, unknown> }
+  | { type: 'floor_request'; from: string; from_uri?: string; envelope_json?: Record<string, unknown> }
+  | { type: 'floor_yield'; from: string; from_uri?: string; envelope_json?: Record<string, unknown> }
+  | { type: 'manifest_published'; agent: string; agent_uri?: string; manifests?: Record<string, unknown>[]; envelope_json?: Record<string, unknown> }
   | { type: 'artifact_saved'; slug: string; kind: string; agent: string; preview: string }
   | { type: 'image_saved'; agent: string; url: string }
   | { type: 'memory_saved'; category: string; content: string; agent: string | null }

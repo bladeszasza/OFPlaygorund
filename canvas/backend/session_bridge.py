@@ -45,12 +45,24 @@ def _token_value(token: Any) -> str:
     return value if isinstance(value, str) else str(value)
 
 
+def _envelope_to_dict(envelope: "Envelope") -> dict[str, Any]:
+    """Best-effort serialization of an OFP envelope to a plain dict."""
+    try:
+        import json as _json
+        raw = dict(envelope)
+        # Round-trip through JSON to ensure all nested objects are plain types
+        return _json.loads(_json.dumps(raw, default=str))
+    except Exception:
+        return {}
+
+
 def _serialize_envelope(
     envelope: "Envelope", agent_names: dict[str, str]
 ) -> dict[str, Any] | None:
     """Convert an OFP envelope into a canvas WebSocket event."""
     sender_uri = envelope.sender.speakerUri if envelope.sender else "unknown"
     sender_name = _extract_agent_name(sender_uri, agent_names)
+    envelope_json = _envelope_to_dict(envelope)
 
     for event in envelope.events or []:
         event_type = getattr(event, "eventType", type(event).__name__)
@@ -83,28 +95,51 @@ def _serialize_envelope(
                 "sender_uri": sender_uri,
                 "text": text,
                 "media": media,
+                "envelope_json": envelope_json,
             }
 
         if event_type == "grantFloor":
             target = getattr(event, "to", None)
             target_uri = getattr(target, "speakerUri", "") if target else ""
             target_name = _extract_agent_name(target_uri, agent_names) if target_uri else ""
-            return {"type": "floor_grant", "to": target_name, "to_uri": target_uri}
+            return {"type": "floor_grant", "to": target_name, "to_uri": target_uri, "envelope_json": envelope_json}
 
         if event_type == "revokeFloor":
             target = getattr(event, "to", None)
             target_uri = getattr(target, "speakerUri", "") if target else ""
             target_name = _extract_agent_name(target_uri, agent_names) if target_uri else ""
-            return {"type": "floor_revoke", "from": target_name, "from_uri": target_uri}
+            return {"type": "floor_revoke", "from": target_name, "from_uri": target_uri, "envelope_json": envelope_json}
 
         if event_type == "requestFloor":
-            return {"type": "floor_request", "from": sender_name, "from_uri": sender_uri}
+            return {"type": "floor_request", "from": sender_name, "from_uri": sender_uri, "envelope_json": envelope_json}
 
         if event_type in ("publishManifest", "publishManifests"):
-            return {"type": "manifest_published", "agent": sender_name, "agent_uri": sender_uri}
+            parameters = getattr(event, "parameters", None) or {}
+            if isinstance(parameters, dict):
+                raw_manifests = parameters.get("servicingManifests", [])
+            else:
+                raw_manifests = getattr(parameters, "servicingManifests", None) or []
+            manifests: list[dict] = []
+            for m in raw_manifests:
+                if isinstance(m, dict):
+                    manifests.append(m)
+                elif hasattr(m, "to_dict"):
+                    manifests.append(m.to_dict())
+                else:
+                    try:
+                        manifests.append(dict(m))
+                    except Exception:
+                        pass
+            return {
+                "type": "manifest_published",
+                "agent": sender_name,
+                "agent_uri": sender_uri,
+                "manifests": manifests,
+                "envelope_json": envelope_json,
+            }
 
         if event_type == "yieldFloor":
-            return {"type": "floor_yield", "from": sender_name, "from_uri": sender_uri}
+            return {"type": "floor_yield", "from": sender_name, "from_uri": sender_uri, "envelope_json": envelope_json}
 
         # Suppress noisy protocol events — return None to skip them
         if event_type not in {"utterance"}:

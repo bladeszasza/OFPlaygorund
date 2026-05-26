@@ -1,0 +1,31 @@
+{
+  "_title": "Procedural Blocky Platformer",
+  "_description": "Showrunner-driven 9-agent pipeline that builds a playable Three.js endless runner — theme + hero input, then design → texture → code phases producing a file://-safe index.html.",
+  "nodes": [
+    {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SHOWRUNNER_DRIVEN", "topic": "Procedural blocky endless runner — theme: space, hero: astronaut", "maxTurns": null, "noHuman": true, "humanName": "User", "showFloorEvents": false}},
+    {"id": "conv-main", "type": "ConversationNode", "data": {}},
+    {"id": "agent-Showrunner", "type": "AgentNode", "data": {"provider": "anthropic", "name": "Showrunner", "model": "claude-haiku-4-5-20251001", "systemPrompt": "You are Showrunner — orchestrator of a procedural blocky endless runner game.\n\nTEAM: AssetDirector, CharDesigner, GeomBuilder, TextureDir, TextureGen, GameArchitect, SceneComposer, DevAlpha (coding), DevBeta (coding).\n\nPIPELINE (strictly in this order):\n1. [ASSIGN AssetDirector]: Create 9-asset manifest for the theme and hero from the topic.\n2. [ASSIGN CharDesigner]: Parts tables for all 9 assets using AssetDirector's manifest.\n3. [ASSIGN GeomBuilder]: All buildXxx() Three.js functions from CharDesigner's parts tables.\n4. [ASSIGN TextureDir]: Canvas2D texture recipes for platform, ground, hero surface.\n5. [ASSIGN TextureGen]: Generate 2-3 texture images as base64 data URLs.\n6. [ASSIGN GameArchitect]: Game mechanics + showcase home screen spec.\n7. [ASSIGN SceneComposer]: Lighting + atmosphere spec for the theme.\n8. [ASSIGN DevAlpha]: Build complete main.js — full game with GeomBuilder functions, GameArchitect mechanics, SceneComposer lighting, TextureDir textures.\n9. [CODING_SESSION policy=round_robin max_rounds=6 topic=Polish and complete the endless runner]\n   [CODING_AGENT -provider anthropic -name DevAlpha -system @development/threejs-developer -timeout 1200]\n   [CODING_AGENT -provider openai -name DevBeta -system @development/geometry-builder -timeout 1200]\n10. Check: is index.html file://-safe (no ES modules, no local imports)? If not, fix. Then [TASK_COMPLETE].\n\nRULES: Each agent reads prior phase artifacts. Never skip phases.", "slug": "", "agentType": "orchestrator"}},
+    {"id": "agent-AssetDirector", "type": "AgentNode", "data": {"provider": "openai", "name": "AssetDirector", "model": "", "systemPrompt": "", "slug": "@creative/theme-asset-director", "agentType": ""}},
+    {"id": "agent-CharDesigner", "type": "AgentNode", "data": {"provider": "openai", "name": "CharDesigner", "model": "", "systemPrompt": "", "slug": "@creative/blocky-character-designer", "agentType": ""}},
+    {"id": "agent-GeomBuilder", "type": "AgentNode", "data": {"provider": "openai", "name": "GeomBuilder", "model": "", "systemPrompt": "", "slug": "@development/geometry-builder", "agentType": ""}},
+    {"id": "agent-TextureDir", "type": "AgentNode", "data": {"provider": "openai", "name": "TextureDir", "model": "", "systemPrompt": "", "slug": "@creative/texture-director", "agentType": ""}},
+    {"id": "agent-TextureGen", "type": "AgentNode", "data": {"provider": "openai", "name": "TextureGen", "model": "", "systemPrompt": "Generate canvas2D texture images as base64 data URLs. Output textures_data.js with a TEXTURES object mapping key names to data: URLs.", "slug": "", "agentType": "text-to-image"}},
+    {"id": "agent-GameArchitect", "type": "AgentNode", "data": {"provider": "openai", "name": "GameArchitect", "model": "", "systemPrompt": "", "slug": "@development/platformer-architect", "agentType": ""}},
+    {"id": "agent-SceneComposer", "type": "AgentNode", "data": {"provider": "openai", "name": "SceneComposer", "model": "", "systemPrompt": "", "slug": "@creative/3d-scene-composer", "agentType": ""}},
+    {"id": "agent-DevAlpha", "type": "AgentNode", "data": {"provider": "anthropic", "name": "DevAlpha", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@development/threejs-developer", "agentType": "code-generation"}},
+    {"id": "agent-DevBeta", "type": "AgentNode", "data": {"provider": "openai", "name": "DevBeta", "model": "", "systemPrompt": "", "slug": "@development/geometry-builder", "agentType": "code-generation"}}
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "agent-Showrunner"},
+    {"source": "floor-main", "target": "agent-AssetDirector"},
+    {"source": "floor-main", "target": "agent-CharDesigner"},
+    {"source": "floor-main", "target": "agent-GeomBuilder"},
+    {"source": "floor-main", "target": "agent-TextureDir"},
+    {"source": "floor-main", "target": "agent-TextureGen"},
+    {"source": "floor-main", "target": "agent-GameArchitect"},
+    {"source": "floor-main", "target": "agent-SceneComposer"},
+    {"source": "floor-main", "target": "agent-DevAlpha"},
+    {"source": "floor-main", "target": "agent-DevBeta"}
+  ]
+}

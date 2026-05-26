@@ -1,21 +1,23 @@
 {
   "_title": "Illustrated Novel Pipeline",
-  "_description": "Showrunner-driven 6-agent pipeline: SeriesDirector orchestrates writing and watercolour image generation.",
+  "_description": "Showrunner-driven 7-agent pipeline: SeriesDirector orchestrates architecture, writing, verse, and watercolour image generation.",
   "nodes": [
     {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SHOWRUNNER_DRIVEN", "topic": "An illustrated gothic mystery novel", "maxTurns": null, "noHuman": true, "humanName": "User", "showFloorEvents": false}},
     {"id": "conv-main", "type": "ConversationNode", "data": {}},
     {"id": "agent-SeriesDirector", "type": "AgentNode", "data": {"provider": "anthropic", "name": "SeriesDirector", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@creative/series-director", "agentType": "orchestrator"}},
-    {"id": "agent-CharacterArchitect", "type": "AgentNode", "data": {"provider": "anthropic", "name": "CharacterArchitect", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@creative/character-architect", "agentType": ""}},
+    {"id": "agent-CharacterArchitect", "type": "AgentNode", "data": {"provider": "openai", "name": "CharacterArchitect", "model": "gpt-5.4", "systemPrompt": "", "slug": "@creative/character-architect", "agentType": ""}},
     {"id": "agent-NarrativePacingArchitect", "type": "AgentNode", "data": {"provider": "anthropic", "name": "NarrativePacingArchitect", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@creative/narrative-pacing-architect", "agentType": ""}},
-    {"id": "agent-ProseNovelist", "type": "AgentNode", "data": {"provider": "anthropic", "name": "ProseNovelist", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@creative/prose-novelist", "agentType": ""}},
-    {"id": "agent-AquarellePainter", "type": "AgentNode", "data": {"provider": "anthropic", "name": "AquarellePainter", "model": "", "systemPrompt": "", "slug": "@creative/aquarelle-painter", "agentType": ""}},
-    {"id": "agent-IllustrationGen", "type": "AgentNode", "data": {"provider": "huggingface", "name": "IllustrationGen", "model": "black-forest-labs/FLUX.1-dev", "systemPrompt": "watercolour illustration, aquarelle on cold-press paper, soft luminous washes", "slug": "", "agentType": "text-to-image"}}
+    {"id": "agent-VerseArchitect", "type": "AgentNode", "data": {"provider": "anthropic", "name": "VerseArchitect", "model": "claude-sonnet-4-6", "systemPrompt": "", "slug": "@creative/verse-architect", "agentType": ""}},
+    {"id": "agent-ProseNovelist", "type": "AgentNode", "data": {"provider": "openai", "name": "ProseNovelist", "model": "gpt-5.4", "systemPrompt": "", "slug": "@creative/prose-novelist", "agentType": ""}},
+    {"id": "agent-AquarellePainter", "type": "AgentNode", "data": {"provider": "openai", "name": "AquarellePainter", "model": "gpt-5.4", "systemPrompt": "", "slug": "@creative/aquarelle-painter", "agentType": ""}},
+    {"id": "agent-IllustrationGen", "type": "AgentNode", "data": {"provider": "openai", "name": "IllustrationGen", "model": "gpt-5.4", "systemPrompt": "watercolour illustration, aquarelle on cold-press paper, soft luminous washes", "slug": "", "agentType": "text-to-image"}}
   ],
   "edges": [
     {"source": "floor-main", "target": "conv-main"},
     {"source": "floor-main", "target": "agent-SeriesDirector"},
     {"source": "floor-main", "target": "agent-CharacterArchitect"},
     {"source": "floor-main", "target": "agent-NarrativePacingArchitect"},
+    {"source": "floor-main", "target": "agent-VerseArchitect"},
     {"source": "floor-main", "target": "agent-ProseNovelist"},
     {"source": "floor-main", "target": "agent-AquarellePainter"},
     {"source": "floor-main", "target": "agent-IllustrationGen"}
