@@ -5,6 +5,7 @@ import asyncio
 import base64
 import logging
 import re
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -24,6 +25,58 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("ofp-images")
 DEFAULT_MODEL = "gpt-image-1"
+IMAGE_REFERENCE_RE = re.compile(r"(?i)(?:^|[\s,;])((?:/|\./|\.\./)?[^\s,;]+?\.(?:png|jpe?g|webp))")
+
+
+def _extract_image_paths(text: str) -> list[Path]:
+    """Extract image file paths from a line of text."""
+    paths: list[Path] = []
+    for match in IMAGE_REFERENCE_RE.finditer(text):
+        raw = match.group(1).strip().strip("'\"()[]{}<>")
+        if raw:
+            paths.append(Path(raw))
+    return paths
+
+
+def _extract_reference_image_paths(prompt: str) -> tuple[str, list[Path]]:
+    """Remove REFERENCE_IMAGES blocks from *prompt* and return referenced paths.
+
+    Supported prompt syntax::
+
+        REFERENCE_IMAGES: /path/repa.png, /path/oru.jpg
+        PROMPT: Draw the scene...
+
+    or::
+
+        REFERENCE_IMAGES:
+        - /path/repa.png
+        - /path/oru.jpg
+        PROMPT: Draw the scene...
+    """
+    clean_lines: list[str] = []
+    reference_paths: list[Path] = []
+    collecting_references = False
+
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        marker = re.match(r"^(?:REFERENCE_IMAGES?|ANCHOR_IMAGES?)\s*:\s*(.*)$", stripped, re.IGNORECASE)
+        if marker:
+            collecting_references = True
+            reference_paths.extend(_extract_image_paths(marker.group(1)))
+            continue
+
+        if collecting_references:
+            line_paths = _extract_image_paths(stripped)
+            if line_paths:
+                reference_paths.extend(line_paths)
+                continue
+            if not stripped:
+                continue
+            collecting_references = False
+
+        clean_lines.append(line)
+
+    return "\n".join(clean_lines).strip(), reference_paths
 
 
 def _split_compound_prompt(prompt: str) -> list[str]:
@@ -185,25 +238,50 @@ class OpenAIImageAgent(BasePlaygroundAgent):
 
         def _call() -> bytes:
             client = self._get_client()
+            clean_prompt, reference_paths = _extract_reference_image_paths(prompt)
+            existing_reference_paths = [path for path in reference_paths if path.exists()]
+            for missing_path in [path for path in reference_paths if not path.exists()]:
+                logger.warning("[%s] Reference image not found: %s", self._name, missing_path)
+
             if self._model.startswith("gpt-image-") or self._model == "chatgpt-image-latest":
                 # Images API — native GPT Image models
-                response = client.images.generate(
-                    model=self._model,
-                    prompt=prompt,
-                    n=1,
-                    size="1024x1024",
-                    output_format="jpeg",
-                    output_compression=80,
-                    background="opaque",
-                )
+                if existing_reference_paths:
+                    with ExitStack() as stack:
+                        image_files = [stack.enter_context(path.open("rb")) for path in existing_reference_paths]
+                        response = client.images.edit(
+                            model=self._model,
+                            image=image_files,
+                            prompt=clean_prompt,
+                            n=1,
+                            size="1024x1024",
+                            output_format="jpeg",
+                            output_compression=80,
+                            background="opaque",
+                        )
+                else:
+                    response = client.images.generate(
+                        model=self._model,
+                        prompt=clean_prompt,
+                        n=1,
+                        size="1024x1024",
+                        output_format="jpeg",
+                        output_compression=80,
+                        background="opaque",
+                    )
                 if not response.data or not response.data[0].b64_json:
                     raise RuntimeError("OpenAI image generation returned no image data")
                 return base64.b64decode(response.data[0].b64_json)
             else:
                 # Responses API — mainline models (gpt-4o, gpt-4.1, gpt-5, …)
+                if existing_reference_paths:
+                    logger.warning(
+                        "[%s] Reference images require a GPT Image model; %s will generate text-only",
+                        self._name,
+                        self._model,
+                    )
                 response = client.responses.create(
                     model=self._model,
-                    input=prompt,
+                    input=clean_prompt,
                     tools=[{"type": "image_generation",
                             "output_format": "jpeg",
                             "output_compression": 80,
