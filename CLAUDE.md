@@ -29,9 +29,17 @@ ofp-playground start --help
 ofp-playground web --help    # Gradio web UI (separate subcommand, not a --web flag)
 ofp-playground agents        # List available agent slugs from agents/ library
 ofp-playground validate      # Validate configuration
+ofp-playground canvas        # Visual canvas UI (FastAPI + React, default port 8765)
 ```
 
-Key CLI flags for `start` and `web`: `--policy`, `--agent` (repeatable), `--remote` (remote agent slug/URL, repeatable), `--topic`, `--no-human` (fully autonomous sessions), `--max-turns`, `--show-floor-events`, `-v`/`--verbose`.
+Canvas dependencies are in a separate optional group:
+```bash
+pip install -e ".[canvas]"     # adds fastapi + uvicorn
+# Build the frontend (only needed after frontend source changes)
+cd canvas/frontend && npm install && npm run build
+```
+
+Key CLI flags for `start` and `web`: `--policy`, `--agent` (repeatable), `--remote` (remote agent slug/URL, repeatable), `--topic`, `--no-human` (fully autonomous sessions), `--max-turns`, `--human-name` (display name for the human participant), `--show-floor-events` (print grantFloor/revokeFloor/requestFloor protocol events; hidden by default), `-v`/`--verbose`.
 
 Tests use `async def` without `@pytest.mark.asyncio` — `asyncio_mode = "auto"` is set in `pyproject.toml`. Ruff enforces `line-length = 100`, `target-version = "py310"`.
 
@@ -70,6 +78,8 @@ BasePlaygroundAgent
         ├── AnthropicCodingAgent — code_execution_20250825 beta (default: claude-opus-4-6)
         └── GoogleCodingAgent   — ToolCodeExecution (default: gemini-3-flash-preview)
 ```
+
+**Relevance filter**: In non-SHOWRUNNER policies (FREE_FOR_ALL, ROUND_ROBIN), `BaseLLMAgent` calls `_check_relevance()` before each response — a quick yes/no LLM call asking whether the agent has something relevant to contribute. Orchestrator, coding, and director agents always bypass it (`relevance_filter=False`). Can be disabled globally via `settings.defaults.relevance_filter = false` in `~/.ofp-playground/config.toml`.
 
 All agents extend [`BasePlaygroundAgent`](src/ofp_playground/agents/base.py) which provides:
 - `send_envelope()` / `send_private_utterance()` helpers
@@ -141,6 +151,14 @@ In SHOWRUNNER_DRIVEN pipelines, each accepted phase output is persisted to `resu
 
 The orchestrator and workers receive a compact artifact index in their context and can call `read_artifact(slug)` to retrieve any prior phase's full content. Workers should call `read_artifact` at the start of their turn to access the outputs they depend on. Accepted outputs are also still accumulated in `_manuscript`, but the index is the preferred reference for coding agents.
 
+**Auto-generated slugs:**
+- **`breakout-beat-N`** — after each breakout session completes, the full transcript is automatically persisted under this slug so agents can call `read_artifact('breakout-beat-1')` etc. on retry without needing the ephemeral `_pending_breakout_file`.
+- **`character-memory-<name>`** — when an agent outputs blocks delimited by `=== CHARACTER MEMORY: Name ===` / `=== END ===`, `FloorManager._save_character_memory_blocks()` automatically splits them into one artifact per character. Slug is `character-memory-` + slugified name (e.g. `character-memory-raphael`). These are updated every beat and the index always shows only the latest version per slug (deduplication: last write wins).
+
+**HF text agent workaround**: HuggingFace text agents have no tool support. If a task string contains `read_artifact('slug')` calls, `FloorManager._expand_artifact_refs_in_task()` expands them inline before delivery so HF agents receive the actual content.
+
+**Adding new tools**: Define tool dicts in Anthropic format (see `memory/artifact_tools.py` or `memory/tools.py` for examples). Use the provider converters from `agents/llm/spawn_tools.py` — `to_openai_tools(tools)`, `to_google_tools(tools)`, `to_hf_tools(tools)` — to adapt them for other provider APIs. No separate per-provider definitions needed.
+
 ### Coding Sessions
 
 An orchestrator can launch a multi-agent coding sub-floor via `[CODING_SESSION]` directives (or `create_coding_session` tool). Key details:
@@ -178,6 +196,21 @@ The FloorManager initialises the collector at startup and registers each joining
 
 Use the `ofp-playground web` subcommand (not a flag on `start`) to launch the Gradio interface. Extra flags: `--host`, `--port` (default 7860), `--share`. The `WebHumanAgent` replaces `HumanAgent`; it accepts user input from the browser and streams agent utterances back as chat bubbles. Media (images/video/audio) renders inline.
 
+### Canvas (Visual Floor Builder)
+
+`ofp-playground canvas` launches a FastAPI backend + React/TypeScript frontend at `http://localhost:8765`. Users drag-and-drop `FloorNode` and `AgentNode` nodes, then click Start — the backend translates the graph into a live OFP session.
+
+**Key files:**
+- [`canvas/backend/main.py`](canvas/backend/main.py) — FastAPI app factory (`build_app()`); REST endpoints: `POST /session/start`, `DELETE /session/stop`, `GET /session/status`, `POST /session/agent/add`, `DELETE /session/agent/{name}`, `POST /session/message`, `GET /trace/live`, `GET /media/{path}`. WebSocket at `/ws/{session_id}`.
+- [`canvas/backend/session_bridge.py`](canvas/backend/session_bridge.py) — `SessionBridge` acts as a `MessageBus` collector; serializes OFP envelopes into JSON events (`utterance`, `floor_grant`, `floor_revoke`, `floor_request`) and fans them out to connected WebSocket clients. Late-joining clients receive the full `event_log` replay.
+- [`canvas/frontend/src/`](canvas/frontend/src/) — React/TypeScript frontend (Vite build). Pre-built dist is checked in under `canvas/frontend/dist/` and served by FastAPI's `StaticFiles`.
+
+**`StartRequest` shape** — `nodes` array with `FloorNode` (holds `policy`, `topic`, `maxTurns`, `noHuman`) and `AgentNode` items (holds `provider`, `name`, `model`, `systemPrompt`, `slug`); `edges` array (currently informational only).
+
+**Live trace**: `GET /trace/live` generates the D3 timeline HTML with a WebSocket injected (`live_session_id`) so it auto-updates in real time. The `render_trace_html()` function in `trace/renderer.py` now accepts an optional `live_session_id` parameter for this purpose.
+
+**Parser fix**: `_parse_agent_spec()` in `cli.py` now ignores flag-like tokens inside `[...]` brackets, so orchestrator mission text containing `[BREAKOUT_AGENT -provider ...]` examples is no longer mis-parsed as agent spec flags.
+
 ### Remote Agents
 
 Pass `--remote <slug-or-url>` (repeatable) to proxy an external HTTP OFP endpoint as a participant. Known slugs: `polly` (echo), `arxiv`, `github`, `sec`, `web-search`, `wikipedia`/`wiki`, `stella` (NASA), `verity` (hallucination detector), `profanity`. `RemoteOFPAgent._should_respond()` blocks responses to other remote agents to prevent cascade loops and only reacts to `[DIRECTIVE for <name>]` messages from the floor manager.
@@ -200,7 +233,14 @@ type:subtype:name:description:model
 -provider anthropic -name Alice -system "You are..." -model claude-opus-4-6 -timeout 30 -max-retries 2
 ```
 
-`type` maps to a provider (`anthropic`, `openai`, `google`, `huggingface`) and optionally a task subtype (`image`, `vision`, `music`, `orchestrator`, `classifier`, `code-generation`, etc.).
+`type` maps to a provider (`anthropic`, `openai`, `google`, `huggingface`) and optionally a task subtype. Full subtype list (from `cli.py` `TASK_SUBTYPES`):
+
+```
+text-generation, text-to-image, image-to-text, text-to-video, text-to-music,
+image-text-to-text, image-classification, object-detection, image-segmentation,
+token-classification, text-classification, summarization,
+showrunner, orchestrator, code-generation
+```
 
 ### URIs (constants)
 
@@ -223,9 +263,26 @@ result/<timestamp>_<session-id>/
 ├── music/      — generated audio
 ├── code/       — generated code files (CodingAgents)
 ├── breakout/   — breakout session transcripts
+├── phases/     — ArtifactStore phase Markdown files (SHOWRUNNER_DRIVEN)
+├── sandbox/    — shared workspace for coding sessions
+├── trace.html  — interactive D3 timeline (auto-generated)
 ├── manuscript.txt
 └── memory.json
 ```
+
+The `examples/` directory contains runnable reference pipelines:
+
+| Script | What it demonstrates |
+|--------|---------------------|
+| `example_novel.sh` | 20-phase illustrated novel (showrunner + breakouts + character memory + image gen) |
+| `example_platformer.sh` | 3D browser game via multi-agent coding session |
+| `example_song_production.sh` | Music production pipeline (lyrics → music gen) |
+| `free_for_all_brainstorm.sh` | FREE_FOR_ALL policy, relevance filter in action |
+| `moderated_investment_committee.sh` | MODERATED policy |
+| `round_robin_novel.sh` | ROUND_ROBIN creative writing |
+| `sequential_code_review.sh` | SEQUENTIAL code review |
+| `breakout_code_review.sh` | Orchestrator spawning breakout review sessions |
+| `showcase.sh` / `showcase_web.sh` | Feature showcase (CLI and Gradio) |
 
 ### Artifact Model
 

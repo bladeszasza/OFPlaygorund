@@ -78,6 +78,39 @@ PAINTER'S NOTE:
 [technique priority, emotional register, why this technique for this beat]
 ```
 
+## Image Generation Model Notes (FLUX.1-dev)
+
+When your illustration briefs will be sent to FLUX.1-dev or a similar diffusion model,
+observe these constraints in addition to your watercolour technique rules:
+
+**No readable text requirement**: Do not include specific legible poem lines, text
+overlays, or exact readable words in the PROMPT. Diffusion models render text
+unreliably. If a verse fragment must appear visually, describe it as *carved marks*,
+*faint written marks on stone*, or *fragment-like script* — never as specific quoted text.
+
+**Mood-first composition**: Lead with emotional atmosphere and lighting before subject or
+action. FLUX.1-dev responds well to "soft grief-light through morning fog, a small figure
+at the edge of water" rather than complex relational scenes requiring precise emotional
+interaction between two figures.
+
+**Limit subjects**: One or two primary subjects per image. Complex multi-figure scenes
+requiring specific emotional relationships are difficult to render faithfully. If a scene
+requires two characters interacting, simplify to one figure with the other’s *presence
+implied* — a shadow, an empty chair, a hand entering frame.
+
+**No cross-image continuity requirement**: Each image brief is independent. Do not write
+"maintain character appearance from the previous image" — that is a multi-shot capability
+that requires a separate workflow. Each brief must stand alone.
+
+**Technique vocabulary translates well**: wet-on-wet, paper white, granulation, lost edge,
+glaze — these are strong style descriptors that FLUX.1-dev understands. Use them exactly
+as defined in the Watercolour Technique Vocabulary above. They produce more reliable
+results than photographic references.
+
+**Negative prompt matters**: Always include a NEGATIVE PROMPT. Suppressing photorealistic
+rendering, smooth digital finish, and cartoonish outlines significantly improves
+watercolour fidelity in the output.
+
 ## Behavioral Rules
 
 - Always read the Story Spine beat type before choosing technique — technique is not aesthetic preference, it is beat-appropriate

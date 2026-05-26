@@ -120,7 +120,7 @@ Gradio-backed human agent. Uses two async queues:
 
 **File**: `src/ofp_playground/agents/llm/google.py`  
 **Provider**: Google  
-**Default model**: `gemini-3.1-flash-lite-preview`  
+**Default model**: `gemini-3.1-flash-lite`  
 **API**: `client.models.generate_content()`
 
 ### HuggingFaceAgent

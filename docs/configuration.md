@@ -45,7 +45,7 @@ huggingface = "hf_..."
 [defaults]
 llm_model_anthropic = "claude-haiku-4-5-20251001"
 llm_model_openai = "gpt-5.4-nano"
-llm_model_google = "gemini-3.1-flash-lite-preview"
+llm_model_google = "gemini-3.1-flash-lite"
 llm_model_huggingface = "MiniMaxAI/MiniMax-M2.7"
 relevance_filter = true
 
@@ -65,7 +65,7 @@ timeout_seconds = 30
 |----------|---------------|
 | Anthropic | `claude-haiku-4-5-20251001` |
 | OpenAI | `gpt-5.4-nano` |
-| Google | `gemini-3.1-flash-lite-preview` |
+| Google | `gemini-3.1-flash-lite` |
 | HuggingFace | `MiniMaxAI/MiniMax-M2.7` |
 
 ### Vision (Image-to-Text)
@@ -186,7 +186,7 @@ class DefaultsConfig:
     llm_model_openai: str = "gpt-5.4-nano"
     image_model_openai: str = "gpt-5"
     vision_model_openai: str = "gpt-4o-mini"
-    llm_model_google: str = "gemini-3.1-flash-lite-preview"
+    llm_model_google: str = "gemini-3.1-flash-lite"
     image_model_google: str = "gemini-3.1-flash-image-preview"
     vision_model_google: str = "gemini-3-flash-preview"
     music_model_google: str = "models/lyria-realtime-exp"

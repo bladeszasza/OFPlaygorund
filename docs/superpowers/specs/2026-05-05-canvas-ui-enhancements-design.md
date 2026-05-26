@@ -38,8 +38,13 @@ interface CanvasCallbacks {
   onSend: (text: string) => void
   sessionRunning: boolean
 }
-export const CanvasContext = createContext<CanvasCallbacks>(/* defaults */)
-export const useCanvas = () => useContext(CanvasContext)
+const CanvasContext = createContext<CanvasCallbacks | null>(null)
+export function useCanvas(): CanvasCallbacks {
+  const ctx = useContext(CanvasContext)
+  if (!ctx) throw new Error('useCanvas must be used inside CanvasContext.Provider')
+  return ctx
+}
+export { CanvasContext }
 ```
 
 **`App.tsx` changes:**
@@ -51,7 +56,8 @@ export const useCanvas = () => useContext(CanvasContext)
   }
   ```
 - Wrap `<ReactFlow>` in `<CanvasContext.Provider value={callbacks}>`.
-- `callbacks` object is memoized with `useMemo` over its stable `useCallback` dependencies.
+- `callbacks` object is memoized with `useMemo` over its stable `useCallback` dependencies. This prevents context consumers from re-rendering unless an actual callback identity changes.
+- **Important:** Context value changes do NOT cause node remounts — they cause re-renders of consumers only. The key fix is that `NODE_TYPES` is now a stable module-level reference, so ReactFlow never sees a new component map.
 
 **Node components** (`FloorNode`, `AgentNode`, `HumanNode`): replace props for callbacks with `useCanvas()` call. All other props remain ReactFlow-standard.
 
@@ -136,9 +142,9 @@ summarization
 (+ remaining subtypes)
 ```
 
-**`NodeData` Pydantic model (`canvas/backend/main.py`):** Add `agentType: str = ""` field.
+**Pydantic models (`canvas/backend/main.py`):** Add `agentType: str = ""` field to both `NodeData` and `AddAgentRequest`.
 
-**`_spawn_agent_for_canvas`:** When `agentType` is non-empty, pass `agent_type=f"{provider}:{agentType}"` to `_spawn_llm_agent` instead of just `provider`. This maps directly to the CLI colon format already handled by `_parse_agent_spec`.
+**`_spawn_agent_for_canvas`:** When `agentType` is non-empty, pass `agent_type=f"{provider}:{agentType}"` to `_spawn_llm_agent` instead of just `provider`. When empty, pass just `provider` (defaults to `text-generation` internally). This maps directly to the CLI colon format already handled by `_spawn_llm_agent`'s `.split(":", 1)` logic.
 
 **`AgentNode` display:** Show the type badge if `agentType` is set (e.g. `SHOWRUNNER` in amber, `CODE-GEN` in cyan) below the provider badge.
 
@@ -182,11 +188,28 @@ interface ArtifactNodeData {
 Replace the `artifact_saved` / `image_saved` / `memory_saved` cases in `handleEvent` — instead of pushing to the `cards` state, create a new ReactFlow node + edge:
 
 ```ts
+function nodeTypeFor(event: WSEvent): string {
+  if (event.type === 'image_saved') return 'ImageArtifactNode'
+  if (event.type === 'memory_saved') return 'PhaseArtifactNode'  // memory as phase node
+  const kind = (event as any).kind ?? 'phase'
+  if (kind === 'code' || kind === 'file') return 'CodeArtifactNode'
+  if (kind === 'music') return 'MusicArtifactNode'
+  return 'PhaseArtifactNode'
+}
+
+function colorFor(event: WSEvent): string {
+  if (event.type === 'image_saved') return '#8b5cf6'
+  const kind = (event as any).kind ?? 'phase'
+  if (kind === 'code' || kind === 'file') return '#10a37f'
+  if (kind === 'music') return '#f97316'
+  return '#58a6ff'
+}
+
 const artifactId = `artifact-${event.slug ?? Date.now()}`
 const agentNodeId = `agent-${event.agent}`
 const newNode: Node = {
   id: artifactId,
-  type: nodeTypeFor(event),   // 'ImageArtifactNode' | 'CodeArtifactNode' | …
+  type: nodeTypeFor(event),
   position: nextArtifactPosition(nodes, agentNodeId),
   data: { /* ArtifactNodeData from event */ },
 }
@@ -194,7 +217,8 @@ const newEdge: Edge = {
   id: `e-${agentNodeId}-${artifactId}`,
   source: agentNodeId,
   target: artifactId,
-  style: { strokeDasharray: '5 4', stroke: colorFor(event) },
+  type: 'glow',
+  data: { active: false, color: colorFor(event) },
 }
 setNodes(nds => [...nds, newNode])
 setEdges(eds => [...eds, newEdge])
@@ -204,12 +228,14 @@ setEdges(eds => [...eds, newEdge])
 
 **Remove:** `cards` state, `ArtifactCard`, `ImageCard`, `MemoryCard` floating overlay renders. The three card components can be deleted.
 
+**`memory_saved` events:** Rendered as `PhaseArtifactNode` with `kind: 'phase'` and `label` set to the memory category. This reuses the existing node type rather than adding a fifth artifact variant.
+
 ### Backend: artifact event hook
 
 **`src/ofp_playground/floor/manager.py`:**  
 Add optional attribute `_on_artifact_saved: Callable[[dict], None] | None = None`.
 
-`ArtifactStore.save()` has no `kind` parameter — kind is determined at each call site and passed directly into the callback dict:
+`ArtifactStore.save()` returns a `PhaseArtifact` object — the callback must capture this return value to access `.slug`:
 
 Call it after each `self._artifact_store.save(...)` using the kind appropriate to the call site:
 
@@ -218,10 +244,15 @@ Call it after each `self._artifact_store.save(...)` using the kind appropriate t
 3. **Breakout transcript save**: kind = `"phase"`
 
 ```python
+artifact = self._artifact_store.save(
+    agent_name=agent_name,
+    content=content,
+    slug=slug,
+)
 if self._on_artifact_saved:
     self._on_artifact_saved({
         "type": "artifact_saved",
-        "slug": artifact.slug,          # returned by ArtifactStore.save()
+        "slug": artifact.slug,
         "agent": agent_name,
         "kind": "phase",                # or whichever kind applies at this site
         "preview": content[:120],
@@ -247,6 +278,15 @@ floor._on_artifact_saved = bridge.push_raw
 
 ## 6. Talking Edge Glow (GlowEdge)
 
+### Types (added to `types.ts`)
+
+```ts
+interface GlowEdgeData {
+  active: boolean
+  color: string  // CSS color for the glow/stroke
+}
+```
+
 ### New file: `canvas/frontend/src/edges/GlowEdge.tsx`
 
 Custom ReactFlow edge component. Renders the standard bezier path plus — when `data.active` is true — an animated overlay path with:
@@ -255,15 +295,38 @@ Custom ReactFlow edge component. Renders the standard bezier path plus — when 
 - `animation: dashTravel 1.0s linear infinite`
 - `filter: drop-shadow(0 0 5px <color>)`
 
-Color is the source agent's provider color (amber for Anthropic, etc.) when active.
+Color is the target agent's provider color (amber for Anthropic, etc.) when active.
 
-**Register in `NODE_TYPES`:** Add `edgeTypes` constant:
+**Register edge type:** Add `edgeTypes` constant at module level (alongside `NODE_TYPES`):
 ```ts
 const EDGE_TYPES = { glow: GlowEdge }
 ```
 Pass to `<ReactFlow edgeTypes={EDGE_TYPES}>`.
 
-**Default edge creation:** All edges created by App use `type: 'glow'` with `data: { active: false, color: '#2a3a4c' }`.
+**Default edge creation:** All edges created by App use `type: 'glow'` with `data: { active: false, color: '#2a3a4c' }`. Set provider color at creation time when the provider is known.
+
+**Edge creation updates:** Existing edge creation code (in `agent_spawning` handler and `handleAddAgent`) must be updated to include `type` and `data`:
+```ts
+const newEdge: Edge = {
+  id: `e-${FLOOR_ID}-${newId}`,
+  source: FLOOR_ID,
+  target: newId,
+  type: 'glow',
+  data: { active: false, color: providerColor(provider) },
+}
+```
+
+Where `providerColor` maps providers to brand colors:
+```ts
+function providerColor(provider: string): string {
+  switch (provider) {
+    case 'anthropic': return '#d97706'  // amber
+    case 'openai': return '#10a37f'     // green
+    case 'google': return '#4285f4'     // blue
+    default: return '#6b7280'           // gray
+  }
+}
+```
 
 **`floor_grant` handler in `handleEvent`:** 
 ```ts
@@ -277,6 +340,8 @@ setEdges(eds => eds.map(e => {
 **`floor_revoke` handler:** Set all edges `data.active = false`.
 
 Artifact edges (Agent→Artifact) also use `type: 'glow'` but `active` is never set to true for them — they just render as static dashed lines.
+
+**Floor→Conversation edge:** The initial edge `e-floor-main-conv-main` also uses `type: 'glow'` with `data: { active: false, color: '#2a3a4c' }`. The `floor_grant` handler's condition (`e.source === FLOOR_ID && e.target === targetAgentId`) naturally excludes it since its target is `conv-main`, not an agent.
 
 ---
 
@@ -295,7 +360,7 @@ Artifact edges (Agent→Artifact) also use `type: 'glow'` but `active` is never 
 
 ### Modified frontend files
 - `canvas/frontend/src/App.tsx` — context provider, stable NODE_TYPES, artifact node events, remove floating cards
-- `canvas/frontend/src/types.ts` — add `ArtifactNodeData`, `agentType` field, glow edge data
+- `canvas/frontend/src/types.ts` — add `ArtifactNodeData`, `GlowEdgeData`, `agentType` field
 - `canvas/frontend/src/nodes/FloorNode.tsx` — use `useCanvas()` instead of props
 - `canvas/frontend/src/nodes/AgentNode.tsx` — use `useCanvas()`, add type badge
 - `canvas/frontend/src/nodes/HumanNode.tsx` — use `useCanvas()`
@@ -309,8 +374,16 @@ Artifact edges (Agent→Artifact) also use `type: 'glow'` but `active` is never 
 _(none)_
 
 ### Modified backend files
-- `canvas/backend/main.py` — add `/agents/list`, `/models/list` endpoints; add `agentType` to `NodeData`; wire `floor._on_artifact_saved`
+- `canvas/backend/main.py` — add `/agents/list`, `/models/list` endpoints; add `agentType` to `NodeData` and `AddAgentRequest`; wire `floor._on_artifact_saved`
 - `src/ofp_playground/floor/manager.py` — add `_on_artifact_saved` callback attribute and call sites
+
+---
+
+## Migration & Backwards Compatibility
+
+- **localStorage**: Bump the layout key from `ofp-canvas-layout-v2` to `ofp-canvas-layout-v3`. Old saved layouts won't have `type: 'glow'` on edges or `agentType` on nodes — the app should gracefully handle missing fields (edges without `type`/`data` render as default ReactFlow edges until re-created).
+- **Backend API**: New fields (`agentType`) default to empty string, so existing frontend builds that omit them still work via Pydantic defaults.
+- **WebSocket events**: `artifact_saved` and `image_saved` events currently originate from `session_bridge._serialize_envelope()`. The new `_on_artifact_saved` callback is an additional source — ensure no duplicate events by checking that `_serialize_envelope` does NOT also emit `artifact_saved` for the same payload.
 
 ---
 
@@ -323,3 +396,6 @@ _(none)_
 - **Artifact nodes**: run an illustrated story pipeline → image nodes appear in graph connected to the producing agent.
 - **Glow edge**: watch floor_grant events → the edge to the speaking agent glows and animates; it stops when that agent yields.
 - **No regression**: existing session start/stop, agent add/kick, human message flows unchanged.
+- **Edge glow deactivation**: stop a session mid-conversation → all glow edges should deactivate (no stuck active state).
+- **Multiple artifacts same agent**: spawn an image agent that produces 3 images → all three artifact nodes positioned without overlap, all connected to the same agent node.
+- **localStorage upgrade**: clear localStorage, start a session, verify new layout key is saved. Then reload — layout should restore correctly with glow edge types.

@@ -53,8 +53,11 @@ CHARACTER BLUEPRINT: [Story Title]
 HERO: [name]
 ESSENCE: [one line — who this person is at their core, unchanged by the story]
 STARTING BELIEF: [what they believe at the start — specific, statable as a sentence]
-WOUND: [the past experience that produced the starting belief]
-THRESHOLD MOMENT: [the specific, sceneable point of no return — what they do that they cannot undo]
+SUPERIORITY_MASK: [the face the hero projects to others — the performance of superiority, confidence, or contempt for those below them]
+INFERIORITY_SOURCE: [the private shame or fear the hero conceals beneath that performance — the thing they cannot admit]
+SOCIAL_CONTEMPT_AXIS: [who the hero looks down on, and the specific form of contempt — note that this contempt is a displacement of the hero's own INFERIORITY_SOURCE]
+WOUND: [the past experience that produced the starting belief and the superiority mask]
+THRESHOLD MOMENT: [the specific, sceneable point of no return — the moment the INFERIORITY_SOURCE is threatened or exposed]
 ENDING BELIEF: [what they believe at the end — directly answers the starting belief]
 ARC STATEMENT: [Hero] moves from [starting belief] to [ending belief] by [specific action at threshold].
 
@@ -80,6 +83,11 @@ SHADOW:
 - The shadow's desire must be understandable — if the reader cannot see any part of themselves in the shadow, the shadow is not working
 - Side characters accumulate weight across a series — in multi-story work, note which characters survive and what they carry
 - The echo term must appear in the hero's arc — it should name something the hero does, carries, or confronts
+- When a CREST is provided, SUPERIORITY_MASK and INFERIORITY_SOURCE are mandatory fields, not optional extensions
+- The hero's STARTING BELIEF must encode the crest's surface ideology — it is not enough to say "the hero is proud"; name the specific claim they make about themselves and others
+- The shadow must embody what the hero becomes if the INFERIORITY_SOURCE is exposed without transformation — the shadow lives the crest's worst-case outcome
+- The SOCIAL_CONTEMPT_AXIS must be specific: name the group, person, or type the hero scorns, and name the displaced shame that powers that scorn
+- The threshold moment must be the moment the INFERIORITY_SOURCE is directly threatened, exposed, or confronted — not a generic decision, but the specific crack in the mask
 
 ## Example Interactions
 

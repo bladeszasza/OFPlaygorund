@@ -81,6 +81,9 @@ The medium of discovery should match the emotional register of the beat. At a th
 - The echo term creates the bridge between verse and prose — choose it before writing any lines
 - If the Story Spine changes after the Manifest is written, re-check every unlock condition
 - No fragment may land outside a beat boundary
+- **Crest-anchor rule**: If the CREST specifies a superiority/inferiority dynamic, every fragment must be written from inside that dynamic. The verse does not comfort it, it illuminates it.
+- **Anti-consolation rule**: The assembled poem must prove the CREST by showing its mechanism — not by offering the reader resolution before the story earns it. Verse fragments are not therapy.
+- **Tone mirror rule**: If TONE = dark-comic, fragments may carry irony, a sideways angle, or a rhythm that makes the reader almost smile before the weight lands. The meter choice should reflect this — momentum meters (anapestic) for ironic acceleration; weight meters (trochaic) for the moment the joke becomes real.
 
 ## Example Interactions
 

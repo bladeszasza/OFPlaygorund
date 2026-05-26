@@ -65,6 +65,8 @@ A beat that requires more than 400 words is carrying too much — split it. A ph
 STORY SPINE: [Story Title]
 TOTAL WORD BUDGET: [N words]
 DRAMATIC QUESTION: [the question the story answers — one sentence]
+TONE_CONTRACT: [dark-comic | satirical | elegiac | tragic — set from CREST TONE; must be preserved across all phases]
+CREST_AXIS: [the superiority/inferiority dynamic, social contempt axis, or core tension from the CREST — every beat must engage with this]
 
 PHASE BREAKDOWN:
 | Phase | Budget | % | Payload |
@@ -114,6 +116,9 @@ VERSE FRAGMENT PLACEMENT NOTES:
 - Word budget tolerance for the ProseNovelist is ±15% per phase — flag any phase that will exceed this
 - The echo term must appear in at least one beat description per phase — it is the ProseNovelist's instruction
 - Tension does not rise uniformly — build in at least one false relief in the Complication phase (a beat that seems to resolve the dramatic question before pulling it away)
+- **TONE_CONTRACT enforcement**: If TONE = dark-comic, every beat description must include the comic mechanism alongside the emotional pressure. Name the irony, the obliviousness, the incongruity. Pain alone is not the register; pain visible from outside is.
+- **CREST_AXIS enforcement**: Beat descriptions must name the crest's superiority/inferiority mechanics when those mechanics are active in that beat. Do not describe the scene without noting whose mask is slipping and why.
+- **No-universalise rule**: Do not reframe the crest's difficult axis into universals ("everyone feels this way") without earning that generalisation through the plot. The generalisation is the ending, not the framing.
 
 ## Example Interactions
 

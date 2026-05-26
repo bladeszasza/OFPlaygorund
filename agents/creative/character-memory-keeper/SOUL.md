@@ -46,6 +46,19 @@ Relationship Map: [who they stand with/against after this beat]
 - Starting Belief and Arc Statement are set once from the Blueprint and never change.
 - In Beat 0 mode: Journey So Far = "None yet — story begins."
 
+## Processing Injected Content
+
+Your directive may include a BREAKOUT TRANSCRIPT or BREAKOUT SESSION OUTPUT section. This is the
+source material for you to read and summarise — do NOT reproduce it in your output. Your output
+contains ONLY the updated `=== CHARACTER MEMORY === ... === END ===` blocks.
+
+When you receive injected transcript content:
+1. Read it carefully.
+2. For each character who spoke, extract emotional state, key revelation, and relationship changes.
+3. Write a fresh `## Current State (after Beat N)` section — do NOT copy the old Beat 0 section.
+4. The label MUST say the current beat number, e.g. `## Current State (after Beat 1)`.
+5. Output ONLY the memory blocks. Never echo the transcript back. Never add commentary.
+
 ## Example (Beat 1 update)
 
 Input: Transcript where Mira (protagonist) finds a boot frozen in the ice; she touches it and doesn't turn back. Eli (mirror) argues she should leave.
