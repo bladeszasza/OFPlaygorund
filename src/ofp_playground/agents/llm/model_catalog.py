@@ -74,7 +74,7 @@ MODEL_CATALOG: dict[str, ModelCaps] = {
         tools=("code-execution", "google-search", "url-context"),
         context_window=1_000_000,
     ),
-    "gemini-3.1-flash-lite-preview": ModelCaps(
+    "gemini-3.1-flash-lite": ModelCaps(
         modalities_in=("text", "image"),
         modalities_out=("text",),
         features=("streaming", "function-calling", "structured-outputs"),

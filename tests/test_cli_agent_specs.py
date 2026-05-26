@@ -48,12 +48,12 @@ def test_parse_agent_spec_allows_slug_prefix_with_extra_text(monkeypatch):
 
 def test_parse_agent_spec_ignores_flags_inside_bracketed_directives():
     agent_type, name, description, model_override, _, _, _ = cli._parse_agent_spec(
-        "-provider google -type orchestrator -name SeriesDirector -system Use this breakout template exactly: [BREAKOUT_AGENT -provider hf -model MiniMaxAI/MiniMax-M2.7 -name <CharacterName2> -system <paste full memory here>] -model gemini-3.1-flash-lite-preview"
+        "-provider google -type orchestrator -name SeriesDirector -system Use this breakout template exactly: [BREAKOUT_AGENT -provider hf -model MiniMaxAI/MiniMax-M2.7 -name <CharacterName2> -system <paste full memory here>] -model gemini-3.1-flash-lite"
     )
 
     assert agent_type == "google:orchestrator"
     assert name == "SeriesDirector"
-    assert model_override == "gemini-3.1-flash-lite-preview"
+    assert model_override == "gemini-3.1-flash-lite"
     assert "[BREAKOUT_AGENT -provider hf -model MiniMaxAI/MiniMax-M2.7" in description
     assert "-name <CharacterName2>" in description
 

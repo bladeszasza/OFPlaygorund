@@ -1631,7 +1631,7 @@ def agents():
         "    Image-to-Text            — analyze images via vision (default: gpt-4o-mini)\n"
         "\n"
         "  [bold]Google generative tasks (-type):[/bold]\n"
-        "    Text-Generation          — chat/text LLM (default: gemini-3.1-flash-lite-preview)\n"
+        "    Text-Generation          — chat/text LLM (default: gemini-3.1-flash-lite)\n"
         "    Text-to-Image            — generate images via Nano Banana (default: gemini-3.1-flash-image-preview)\n"
         "    Image-to-Text            — analyze images via Gemini vision (default: gemini-3-flash-preview)\n"
         "    Text-to-Music            — generate music via Lyria RealTime (default: lyria-realtime-exp)\n"
