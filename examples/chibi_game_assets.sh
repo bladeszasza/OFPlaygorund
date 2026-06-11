@@ -20,10 +20,9 @@
 # Pipeline:
 #   Phase 1:  AssetVisioneer designs the world bible + full asset manifest
 #   Phase 2+: ChibiOrchestrator loops through manifest, dispatching paint jobs
-#             Characters → short plain-language prompt starting with
-#               "front and back view of a: 3D game character in T pose, chibi features, ..."
-#             Props → short plain-language prompt starting with
-#               "3D game prop, chibi style, white background, ..."
+#             Characters/creatures → 2 images via (1)/(2) compound prompt:
+#               (1) front T-pose  (2) back T-pose; back view references front image
+#             Props/non-humanoids → 1 beauty-shot image from front
 #   Final:    [TASK_COMPLETE] — all images saved to result/<session>/images/
 #
 # Usage:
@@ -63,21 +62,24 @@ Phase 1: [ASSIGN AssetVisioneer]
 Task: Design the full world bible — game world theme, master color palette, and a complete asset manifest with a plain-language visual brief for every asset.
 
 Phase 2+: After reading AssetVisioneer's manifest via read_artifact, loop through every asset:
-  For each CHARACTER asset:
+  For each CHARACTER or CREATURE asset (humanoid biped):
     [ASSIGN ChibiPainter]
-    front and back view of a: 3D game character in T pose, chibi features, humanoid, big head, [1-2 sentence plain description of the character's appearance and colors from the manifest]
+    (1) 3D game character in T pose, chibi, humanoid, big head, [plain 1-sentence description], front view, white background
+    (2) 3D game character in T pose, chibi, humanoid, big head, [same plain description], back view, white background
 
-  For each PROP asset:
+  For each PROP asset (house, tree, fence, object — non-humanoid):
     [ASSIGN ChibiPainter]
-    3D game prop, chibi style, white background, [1-2 sentence plain description of the prop from the manifest]
+    3D game prop, chibi style, [plain 1-sentence description], white background
 
 [TASK_COMPLETE] after all assets from the manifest are rendered.
 
-PROMPT RULES — READ CAREFULLY:
-- Keep every ChibiPainter prompt SHORT (under 40 words). Plain language only.
-- For characters: always start with 'front and back view of a: 3D game character in T pose, chibi features, humanoid, big head,'
-- Do NOT add style keywords, do NOT add 'game asset sheet', do NOT add 'centered symmetrical full body visible'
-- Those extra keywords cause the model to generate annotated character sheets instead of clean renders
+PROMPT RULES — CRITICAL:
+- Keep every ChibiPainter prompt SHORT. Plain language only. No keyword lists.
+- Characters get 2 separate images via the (1)/(2) compound format — front view then back view
+- The painter automatically uses the front render as a reference when generating the back view
+- Props get 1 image — a clean beauty shot, no (1)/(2) needed
+- Do NOT write 'game asset sheet', 'centered', 'symmetrical', 'full body visible', or any style keyword list
+  — those phrases cause the model to generate annotated wiki-style character sheets, not clean renders
 - Use read_artifact to access AssetVisioneer's phase output before starting image generation
 - Render EVERY asset in the manifest — do not skip any"
 
