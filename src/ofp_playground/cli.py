@@ -106,7 +106,25 @@ def _parse_agent_spec(spec: str) -> tuple[str, str, str, Optional[str], Optional
         def _inside_brackets(position: int) -> bool:
             return any(start <= position < end for start, end in bracket_spans)
 
-        matches = [match for match in flag_re.finditer(spec) if not _inside_brackets(match.start())]
+        def _looks_like_flag_model_id(value: str) -> bool:
+            if not value or len(value) > 256 or any(c.isspace() for c in value):
+                return False
+            if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$", value):
+                return False
+            return any(c.isdigit() for c in value) or any(c in value for c in "./-:")
+
+        def _is_real_flag_match(match: re.Match[str]) -> bool:
+            key = match.group(1).lower()
+            if key != "model":
+                return True
+            rest = spec[match.end():].lstrip()
+            first_token = rest.split(None, 1)[0] if rest else ""
+            return _looks_like_flag_model_id(first_token)
+
+        matches = [
+            match for match in flag_re.finditer(spec)
+            if not _inside_brackets(match.start()) and _is_real_flag_match(match)
+        ]
         if not matches:
             raise click.BadParameter(f"Invalid flag-based agent spec: {spec}")
 
@@ -1627,7 +1645,7 @@ def agents():
         "\n"
         "  [bold]OpenAI generative tasks (-type):[/bold]\n"
         "    Text-Generation          — chat/text LLM (default: gpt-5.4-nano)\n"
-        "    Text-to-Image            — generate images via Responses API (default: gpt-5)\n"
+        "    Text-to-Image            — generate images via Responses API (default: gpt-5.4)\n"
         "    Image-to-Text            — analyze images via vision (default: gpt-4o-mini)\n"
         "\n"
         "  [bold]Google generative tasks (-type):[/bold]\n"

@@ -58,6 +58,30 @@ def test_parse_agent_spec_ignores_flags_inside_bracketed_directives():
     assert "-name <CharacterName2>" in description
 
 
+def test_parse_agent_spec_keeps_prose_model_mentions_inside_system():
+    mission = """Run phases in order.
+
+MODEL MIX:
+- Use only Anthropic and OpenAI breakout agents.
+- Do not specify -model in [BREAKOUT_AGENT] lines; let provider defaults apply.
+
+Assign MusicGen to create a 2-minute cinematic martial-cosmic theme based on the max
+500 word summary of the novel.
+
+After MusicGen yields the floor:
+[TASK_COMPLETE]"""
+
+    agent_type, name, description, model_override, _, _, _ = cli._parse_agent_spec(
+        f"-provider anthropic -type orchestrator -name SeriesDirector -system {mission}"
+    )
+
+    assert agent_type == "anthropic:orchestrator"
+    assert name == "SeriesDirector"
+    assert model_override is None
+    assert "Do not specify -model in [BREAKOUT_AGENT] lines" in description
+    assert "Assign MusicGen to create" in description
+
+
 def test_canvas_command_exists():
     runner = CliRunner()
 
