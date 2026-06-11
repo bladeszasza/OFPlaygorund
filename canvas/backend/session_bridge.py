@@ -37,7 +37,13 @@ logger = logging.getLogger(__name__)
 def _extract_agent_name(uri: str, agent_names: dict[str, str]) -> str:
     if uri in agent_names:
         return agent_names[uri]
-    return uri.split(":")[-1].replace("llm-", "").replace("human-", "")
+    return (
+        uri.split(":")[-1]
+        .replace("llm-", "")
+        .replace("human-", "")
+        .replace("image-", "")
+        .replace("vision-", "")
+    )
 
 
 def _token_value(token: Any) -> str:

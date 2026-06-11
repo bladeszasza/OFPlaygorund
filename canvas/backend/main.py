@@ -155,7 +155,16 @@ async def _spawn_agent_for_canvas(
             settings=settings,
             model_override=model or None,
         )
-        bridge.register_agent(f"tag:ofp-playground.local,2025:llm-{name.lower().replace(' ', '-')}", name)
+        # URI prefix depends on agent subtype — image/vision agents deviate from llm-
+        if agent_type in ("text-to-image", "text-to-video", "text-to-music"):
+            uri_prefix = "image"
+        elif agent_type in ("image-to-text",):
+            uri_prefix = "vision"
+        else:
+            uri_prefix = "llm"
+        bridge.register_agent(
+            f"tag:ofp-playground.local,2025:{uri_prefix}-{name.lower().replace(' ', '-')}", name
+        )
         bridge.push_raw({"type": "agent_joined", "name": name, "provider": provider})
     except Exception as exc:
         logger.error("Failed to spawn agent %s: %s", name, exc)
