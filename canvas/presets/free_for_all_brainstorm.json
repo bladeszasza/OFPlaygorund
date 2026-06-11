@@ -4,10 +4,10 @@
   "nodes": [
     {"id": "floor-main", "type": "FloorNode", "data": {"policy": "FREE_FOR_ALL", "topic": "How can AI improve collaborative creativity?", "maxTurns": 20, "noHuman": true, "humanName": "User", "showFloorEvents": false}},
     {"id": "conv-main", "type": "ConversationNode", "data": {}},
-    {"id": "agent-UserResearcher", "type": "AgentNode", "data": {"provider": "anthropic", "name": "UserResearcher", "model": "", "systemPrompt": "You are a user researcher who brings empathy and human insight to every discussion. Focus on real human needs and pain points.", "slug": "", "agentType": ""}},
+    {"id": "agent-UserResearcher", "type": "AgentNode", "data": {"provider": "openai", "name": "UserResearcher", "model": "", "systemPrompt": "You are a user researcher who brings empathy and human insight to every discussion. Focus on real human needs and pain points.", "slug": "", "agentType": ""}},
     {"id": "agent-ProductManager", "type": "AgentNode", "data": {"provider": "openai", "name": "ProductManager", "model": "", "systemPrompt": "You are a product manager who keeps discussions grounded in market reality, prioritisation, and delivery constraints.", "slug": "", "agentType": ""}},
     {"id": "agent-Designer", "type": "AgentNode", "data": {"provider": "google", "name": "Designer", "model": "", "systemPrompt": "You are a UX designer who thinks visually and champions simplicity and user delight.", "slug": "", "agentType": ""}},
-    {"id": "agent-DevilsAdvocate", "type": "AgentNode", "data": {"provider": "anthropic", "name": "DevilsAdvocate", "model": "", "systemPrompt": "You are a devil's advocate who challenges assumptions and stress-tests ideas to make the team stronger.", "slug": "", "agentType": ""}}
+    {"id": "agent-DevilsAdvocate", "type": "AgentNode", "data": {"provider": "openai", "name": "DevilsAdvocate", "model": "", "systemPrompt": "You are a devil's advocate who challenges assumptions and stress-tests ideas to make the team stronger.", "slug": "", "agentType": ""}}
   ],
   "edges": [
     {"source": "floor-main", "target": "conv-main"},
