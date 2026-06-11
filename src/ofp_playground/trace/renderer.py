@@ -457,6 +457,15 @@ def render_trace_html(
       font-size: 12px;
       font-weight: 600;
     }
+    .lane-sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #111a24;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+      pointer-events: none;
+    }
     .lane-line {
       stroke: #2f4154;
       stroke-width: 1;
@@ -796,7 +805,7 @@ def render_trace_html(
       const lanes = collectLaneUris(sectionEvents);
       const eventTypes = [...new Set(sectionEvents.map((evt) => evt.event_type))].sort((a, b) => a.localeCompare(b));
       const typeState = new Map(eventTypes.map((eventType) => [eventType, true]));
-      const baseMargins = { top: 58, right: 40, bottom: 30, left: 90 };
+      const baseMargins = { top: 20, right: 40, bottom: 30, left: 90 };
       const laneGap = 210;
       const rowGap = 38;
 
@@ -885,6 +894,15 @@ def render_trace_html(
       canvasWrap.className = `canvas-wrap${config.emphasize ? " main-canvas" : ""}`;
       section.appendChild(canvasWrap);
 
+      const stickyHeader = document.createElement("div");
+      stickyHeader.className = "lane-sticky-header";
+      canvasWrap.appendChild(stickyHeader);
+
+      const headerSvgNode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      headerSvgNode.setAttribute("height", "36");
+      stickyHeader.appendChild(headerSvgNode);
+      const headerSvg = d3.select(headerSvgNode);
+
       const svgNode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       canvasWrap.appendChild(svgNode);
       const svg = d3.select(svgNode);
@@ -951,6 +969,20 @@ def render_trace_html(
         svg.attr("width", width).attr("height", height);
         svg.selectAll("*").remove();
 
+        headerSvgNode.setAttribute("width", width);
+        headerSvg.selectAll("*").remove();
+        lanes.forEach((uri) => {
+          const x = laneX(uri);
+          const isFloor = isManagerUri(uri);
+          headerSvg.append("text")
+            .attr("class", "lane-label")
+            .attr("x", x)
+            .attr("y", 24)
+            .attr("text-anchor", "middle")
+            .attr("fill", isFloor ? "#7aafdc" : "#c8d6e5")
+            .text(displayNameForUri(uri));
+        });
+
         const defs = svg.append("defs");
         defs.append("marker")
           .attr("id", `arrow-${config.title.replace(/\\s+/g, "-").toLowerCase()}`)
@@ -996,12 +1028,6 @@ def render_trace_html(
             .attr("y1", baseMargins.top - 24)
             .attr("y2", height - baseMargins.bottom);
 
-          g.append("text")
-            .attr("class", "lane-label")
-            .attr("x", x)
-            .attr("y", 26)
-            .attr("text-anchor", "middle")
-            .text(displayNameForUri(uri));
         });
 
         const rows = g.selectAll("g.row")
