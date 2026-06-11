@@ -15,12 +15,13 @@
 # Agents:
 #   - openai:orchestrator    → ChibiOrchestrator  (gpt-5.4)
 #   - openai:text-generation → AssetVisioneer     (gpt-5.4, @creative/game-asset-visioneer)
-#   - openai:text-to-image   → ChibiPainter       (gpt-image-2)
+#   - openai:text-to-image   → ChibiPainter       (gpt-image-2-2026-04-21, @ofp-images/chibi-game-asset-painter)
 #
 # Pipeline:
 #   Phase 1:  AssetVisioneer designs the world bible + full asset manifest
 #   Phase 2+: ChibiOrchestrator loops through manifest, dispatching paint jobs
-#             Characters → 2 assigns (front view + back view)
+#             Characters → 1 compound assign "(1) front (2) back"; painter chains
+#               the front view as a reference image when generating the back view
 #             Props → 1 assign (or sheet, orchestrator decides)
 #   Final:    [TASK_COMPLETE] — all images saved to result/<session>/images/
 #
@@ -62,11 +63,9 @@ Task: Design the full world bible — game world theme, master color palette, an
 
 Phase 2+: After reading AssetVisioneer's manifest via read_artifact, loop through every asset:
   For each CHARACTER asset (type=character):
-    Step A: [ASSIGN ChibiPainter]
-    chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, front facing, T-pose, full body visible, centered, symmetrical, game character asset sheet, [visual brief from manifest], key colors: [hex values from world palette]
-
-    Step B: [ASSIGN ChibiPainter]
-    chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, back view, rear facing, T-pose, full body visible, centered, symmetrical, game character asset sheet, [same character visual brief], key colors: [hex values]
+    [ASSIGN ChibiPainter]
+    (1) chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, front facing, T-pose, full body visible, centered, symmetrical, game character asset sheet, [visual brief from manifest], key colors: [hex values from world palette]
+    (2) chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, back view, rear facing, T-pose, full body visible, centered, symmetrical, game character asset sheet, [same character visual brief], key colors: [hex values]
 
   For each PROP asset (type=prop):
     [ASSIGN ChibiPainter]
@@ -77,7 +76,8 @@ Phase 2+: After reading AssetVisioneer's manifest via read_artifact, loop throug
 RULES:
 - Use read_artifact to access AssetVisioneer's phase output before starting image generation
 - Render EVERY asset in the manifest — do not skip any
-- Characters always get both front AND back view renders
+- Characters always get both front AND back view renders in a single assign using (1)/(2) compound format
+- The painter automatically uses the front view as a reference image when generating the back view
 - Craft each prompt to encode the specific palette and visual brief from the manifest
 - Props: use your judgment on views — symmetric props need only one; asymmetric props may benefit from two"
 
@@ -88,4 +88,4 @@ ofp-playground start \
   --no-human \
   --agent "-provider openai -type orchestrator -name ChibiOrchestrator -model gpt-5.4 -system ${ORCHESTRATOR_PROMPT}" \
   --agent "-provider openai -name AssetVisioneer -model gpt-5.4 -system @creative/game-asset-visioneer" \
-  --agent "-provider openai -type text-to-image -name ChibiPainter -model gpt-image-2 -system chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, game asset sheet, full body visible, centered"
+  --agent "-provider openai -type text-to-image -name ChibiPainter -model gpt-image-2-2026-04-21 -system @ofp-images/chibi-game-asset-painter"
