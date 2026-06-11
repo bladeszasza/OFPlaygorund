@@ -233,10 +233,19 @@ class OpenAIImageAgent(BasePlaygroundAgent):
             scene = " ".join(words[:40])
         return f"{self._style}, {scene}"
 
-    async def _generate_image(self, prompt: str) -> Optional[Path]:
+    async def _generate_image(
+        self, prompt: str, previous_response_id: Optional[str] = None
+    ) -> tuple[Optional[Path], Optional[str]]:
+        """Generate one image and save it to disk.
+
+        Returns ``(path, response_id)`` where *response_id* is set only for
+        Responses API calls so callers can chain via ``previous_response_id``.
+        Images API calls always return ``response_id=None``; chaining is done
+        instead via ``REFERENCE_IMAGES:`` in the prompt.
+        """
         loop = asyncio.get_event_loop()
 
-        def _call() -> bytes:
+        def _call() -> tuple[bytes, Optional[str]]:
             client = self._get_client()
             clean_prompt, reference_paths = _extract_reference_image_paths(prompt)
             existing_reference_paths = [path for path in reference_paths if path.exists()]
@@ -244,7 +253,7 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 logger.warning("[%s] Reference image not found: %s", self._name, missing_path)
 
             if self._model.startswith("gpt-image-") or self._model == "chatgpt-image-latest":
-                # Images API — native GPT Image models
+                # Images API — native GPT Image models; chain via images.edit()
                 if existing_reference_paths:
                     with ExitStack() as stack:
                         image_files = [stack.enter_context(path.open("rb")) for path in existing_reference_paths]
@@ -270,16 +279,18 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                     )
                 if not response.data or not response.data[0].b64_json:
                     raise RuntimeError("OpenAI image generation returned no image data")
-                return base64.b64decode(response.data[0].b64_json)
+                return base64.b64decode(response.data[0].b64_json), None
             else:
-                # Responses API — mainline models (gpt-4o, gpt-4.1, gpt-5, …)
+                # Responses API — mainline models (gpt-4o, gpt-4.1, gpt-5.4, gpt-5.5, …)
+                # Chain follow-up renders via previous_response_id so the model
+                # has full visual context of the prior generation.
                 if existing_reference_paths:
                     logger.warning(
-                        "[%s] Reference images require a GPT Image model; %s will generate text-only",
+                        "[%s] Reference images require a GPT Image model; %s will use previous_response_id instead",
                         self._name,
                         self._model,
                     )
-                response = client.responses.create(
+                kwargs: dict = dict(
                     model=self._model,
                     input=clean_prompt,
                     tools=[{"type": "image_generation",
@@ -287,6 +298,9 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                             "output_compression": 80,
                             "background": "opaque"}],
                 )
+                if previous_response_id:
+                    kwargs["previous_response_id"] = previous_response_id
+                response = client.responses.create(**kwargs)
                 image_data = [
                     output.result
                     for output in response.output
@@ -294,16 +308,14 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 ]
                 if not image_data:
                     raise RuntimeError("OpenAI image generation returned no image data")
-                return base64.b64decode(image_data[0])
+                return base64.b64decode(image_data[0]), response.id
 
-        async def _coro() -> bytes:
+        async def _coro() -> tuple[bytes, Optional[str]]:
             return await loop.run_in_executor(None, _call)
 
         try:
-            image_bytes = await self._call_with_retry(_coro)
+            image_bytes, response_id = await self._call_with_retry(_coro)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            # Detect actual format from magic bytes — API should return
-            # JPEG but may fall back to PNG/WebP in edge cases.
             ext = "jpg"
             if image_bytes[:4] == b"\x89PNG":
                 ext = "png"
@@ -311,10 +323,10 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 ext = "webp"
             path = self._output_dir / f"{ts}_{self._name.lower()}.{ext}"
             path.write_bytes(image_bytes)
-            return path
+            return path, response_id
         except Exception as e:
             logger.error("[%s] OpenAI image generation error: %s", self._name, e)
-            return None
+            return None, None
 
     async def _handle_utterance(self, envelope: Envelope) -> None:
         sender_uri = self._get_sender_uri(envelope)
@@ -371,9 +383,21 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 # (e.g. "Generate 3 textures: (1) ... (2) ... (3) ...")
                 # but the image API generates one image per call.
                 sub_prompts = _split_compound_prompt(prompt)
+                last_path: Optional[Path] = None
+                last_response_id: Optional[str] = None
                 for sub_prompt in sub_prompts:
+                    if last_response_id is not None:
+                        # Responses API path: chain via previous_response_id —
+                        # the model has full visual context of the prior render.
+                        pass
+                    elif last_path is not None:
+                        # Images API path: inject the saved file as reference so
+                        # images.edit() grounds the next render on the first image.
+                        sub_prompt = f"REFERENCE_IMAGES: {last_path}\n{sub_prompt}"
                     logger.info("[%s] Generating OpenAI image: %s", self._name, sub_prompt[:80])
-                    await self._generate_and_deliver(sub_prompt)
+                    last_path, last_response_id = await self._generate_and_deliver(
+                        sub_prompt, previous_response_id=last_response_id
+                    )
         except Exception as e:
             logger.error("[%s] Floor grant error: %s", self._name, e)
         finally:
@@ -383,13 +407,21 @@ class OpenAIImageAgent(BasePlaygroundAgent):
             self._last_directive_text = None
             await self.yield_floor()
 
-    async def _generate_and_deliver(self, prompt: str) -> None:
-        """Generate a single image from *prompt*, save it, write base64 sidecar, and send utterance."""
-        path = await self._generate_image(prompt)
+    async def _generate_and_deliver(
+        self, prompt: str, previous_response_id: Optional[str] = None
+    ) -> tuple[Optional[Path], Optional[str]]:
+        """Generate a single image, save it, and send an utterance.
+
+        Returns ``(path, response_id)`` — both are forwarded from
+        ``_generate_image`` so callers can chain the next sub-prompt via the
+        appropriate strategy (reference image for Images API, previous_response_id
+        for Responses API).
+        """
+        path, response_id = await self._generate_image(prompt, previous_response_id=previous_response_id)
         if not path:
-            return
+            return None, None
         mime = _sniff_mime(path)
-        text_desc = f"Image saved as {path.name}. Prompt: {prompt[:160]}"
+        text_desc = f"Image saved as {path}. Prompt: {prompt[:160]}"
         # Write base64 data URL into the coding workspace as a
         # pre-seeded JS file.  The Showrunner should NOT include
         # the raw base64 in the conversation — doing so blows the
@@ -436,6 +468,7 @@ class OpenAIImageAgent(BasePlaygroundAgent):
                 text_desc, "image", mime, str(path.resolve())
             )
         )
+        return path, response_id
 
     async def _dispatch(self, envelope: Envelope) -> None:
         for event in (envelope.events or []):
