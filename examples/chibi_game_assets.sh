@@ -2,14 +2,14 @@
 # chibi_game_assets.sh
 # Chibi game asset generation pipeline — GPT-5.4 orchestrator + GPT Image 2 painter
 #
-# Generates a complete set of chibi-style humanoid game asset sheets:
-#   - Hero + Heroine (front + back, T-pose)
-#   - Plushy animal characters x5 (humanoid bipeds, front + back)
-#   - Lizard animal characters x5 (humanoid bipeds, front + back)
-#   - Houses, fences, trees (props, orchestrator decides views)
-#   - Side characters / extras as GPT-5.4 sees fit
+# Generates a complete chibi game asset library:
+#   - Hero + Heroine + 4-6 NPC side characters (front + back T-pose)
+#   - 20-30 Pokémon/Digimon-style humanoid monster creatures (front + back T-pose)
+#       Elemental roster: fire, water, grass, electric, ice, rock, dark, light,
+#       dragon, mechanical, and wild-card types — all bipedal, skeleton-riggable
+#   - Houses x7, fences, trees x6, extra props (beauty-shot renders)
 #
-# All character assets are humanoid bipeds in T-pose for single-skeleton rigging.
+# All character/monster assets get 2 separate renders (front + back T-pose).
 # Style: 3D chibi toon, big head small body, vibrant colors, white background.
 #
 # Agents:
@@ -46,15 +46,34 @@ WORLD THEME HINT: ${THEME}
 MISSION: Generate a complete, coherent set of chibi-style 3D game assets. Characters are humanoid bipeds in T-pose. Style: big head, small body, vibrant colors, white background.
 
 ASSET BRIEF (minimum — expand freely based on AssetVisioneer's world design):
+
+HUMAN CHARACTERS:
 - Hero x1 (humanoid, front+back)
 - Heroine x1 (humanoid, front+back)
-- Plushy animal characters x5 (humanoid biped)
-- Lizard animal characters x5 (humanoid biped)
-- Side characters / extras as AssetVisioneer deems fitting
-- Houses x7 (various styles)
-- Fences (1 set)
+- Side characters / NPCs x4-6 as AssetVisioneer deems fitting
+
+HUMANOID MONSTER ROSTER — 20 to 30 creatures total:
+All monsters must be bipedal (2 legs, 2 arms) and mappable to a single humanoid skeleton.
+Inspiration: Pokémon, Digimon, Yokai Watch — creative and original, NOT copies.
+Cover a wide variety of archetypes across these categories:
+  - Fire types x3: e.g. small flame lizard, lava bear cub, ember fox kit
+  - Water types x3: e.g. bubble frog, wave otter, coral crab biped
+  - Grass/Nature types x3: e.g. leaf gecko, mushroom gnome, vine salamander
+  - Electric types x2: e.g. spark rodent, thunder bird biped, static jellyfish biped
+  - Ice/Snow types x2: e.g. frost rabbit, blizzard wolf cub, snowflake imp
+  - Rock/Earth types x2: e.g. crystal golem baby, stone armadillo biped
+  - Dark/Shadow types x2: e.g. ghost cat, shadow bat biped, dusk slime biped
+  - Light/Psychic types x2: e.g. starlight fairy biped, cosmic moth biped
+  - Dragon types x3: e.g. small wyvern biped, ancient serpent biped, cloud dragon hatchling
+  - Mechanical/Tech types x2: e.g. tiny robot creature, gear golem cub
+  - Extra wild cards x2-4: AssetVisioneer invents freely (plant-dragon hybrids, candy demons, etc.)
+Each creature must have a fun name, distinctive silhouette, and a clear elemental theme.
+
+PROPS:
+- Houses x7 (various styles matching world theme)
+- Fences (1 set, 2-3 segment variants)
 - Trees x6 (various types)
-- Additional props as AssetVisioneer sees fit
+- Additional environmental props as AssetVisioneer sees fit
 
 PIPELINE:
 
@@ -86,7 +105,7 @@ PROMPT RULES — CRITICAL:
 ofp-playground start \
   --policy SHOWRUNNER_DRIVEN \
   --topic "Chibi game asset library — humanoid T-pose characters and props, toon 3D style, vibrant colors, white background" \
-  --max-turns 200 \
+  --max-turns 500 \
   --no-human \
   --agent "-provider openai -type orchestrator -name ChibiOrchestrator -model gpt-5.4 -system ${ORCHESTRATOR_PROMPT}" \
   --agent "-provider openai -name AssetVisioneer -model gpt-5.4 -system @creative/game-asset-visioneer" \
