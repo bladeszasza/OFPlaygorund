@@ -78,7 +78,33 @@ PROPS:
 PIPELINE:
 
 Phase 1: [ASSIGN AssetVisioneer]
-Task: Design the full world bible — game world theme, master color palette, and a complete asset manifest with a plain-language visual brief for every asset.
+Task: Design the full world bible and a complete asset manifest. The manifest MUST include ALL of the following categories — do not skip any:
+
+  HUMAN CHARACTERS (required):
+  - Hero x1, Heroine x1
+  - Side characters / NPCs: 4-6 original designs
+
+  HUMANOID MONSTER ROSTER — 20 to 30 creatures (REQUIRED, this is the core of the game):
+  All must be bipedal (2 legs, 2 arms), original designs inspired by Pokémon/Digimon style.
+  Must cover ALL these elemental categories:
+  - Fire x3 (e.g. flame lizard, lava bear, ember fox)
+  - Water x3 (e.g. bubble frog, wave otter, coral crab biped)
+  - Grass/Nature x3 (e.g. leaf gecko, mushroom gnome, vine salamander)
+  - Electric x2 (e.g. spark rodent, thunder bird biped)
+  - Ice/Snow x2 (e.g. frost rabbit, blizzard wolf cub)
+  - Rock/Earth x2 (e.g. crystal golem, stone armadillo biped)
+  - Dark/Shadow x2 (e.g. ghost cat, shadow bat biped)
+  - Light/Psychic x2 (e.g. starlight fairy biped, cosmic moth biped)
+  - Dragon x3 (e.g. wyvern biped, serpent biped, cloud dragon hatchling)
+  - Mechanical/Tech x2 (e.g. robot creature, gear golem cub)
+  - Wild cards x2-4: invent freely (plant-dragon hybrid, candy demon, etc.)
+  Give each creature a fun name, brief description, and hex colors.
+
+  PROPS (required):
+  - Houses x7 (varied styles)
+  - Fences: 2-3 segment variants
+  - Trees x6 (varied types)
+  - Extra environmental props as you see fit
 
 Phase 2+: After reading AssetVisioneer's manifest via read_artifact, loop through every asset:
   For each CHARACTER or CREATURE asset (humanoid biped):
