@@ -37,7 +37,7 @@ class DefaultsConfig:
     llm_model_anthropic: str = "claude-haiku-4-5-20251001"          # smallest Claude
     vision_model_anthropic: str = "claude-haiku-4-5-20251001"       # Claude vision (image-to-text)
     llm_model_openai: str = "gpt-5.4-nano"                          # smallest GPT-5.4
-    image_model_openai: str = "gpt-5"                               # model used with image_generation tool
+    image_model_openai: str = "gpt-5.4"                               # model used with image_generation tool
     video_model_openai: str = "sora-2"                              # Sora video generation
     vision_model_openai: str = "gpt-4o-mini"                        # OpenAI vision (image-to-text)
     llm_model_google: str = "gemini-3.1-flash-lite"          # default Gemini text model

@@ -173,7 +173,7 @@ Responds to:
 
 **File**: `src/ofp_playground/agents/llm/openai_image.py`  
 **CLI type**: `openai:text-to-image`  
-**Default model**: `gpt-5` (Responses API with `image_generation` tool)  
+**Default model**: `gpt-5.4` (Responses API with `image_generation` tool)  
 **Output**: `result/<session>/images/`
 
 ### GeminiImageAgent (Nano Banana)
