@@ -99,6 +99,10 @@ PROMPT RULES — CRITICAL:
 - Props get 1 image — a clean beauty shot, no (1)/(2) needed
 - Do NOT write 'game asset sheet', 'centered', 'symmetrical', 'full body visible', or any style keyword list
   — those phrases cause the model to generate annotated wiki-style character sheets, not clean renders
+- SANITIZE POSE LANGUAGE: before writing any character prompt, strip these words from the description:
+  waving, mid-step, running, dancing, crouching, dueling, stalking, leaping, dynamic pose, action pose,
+  ready pose, welcoming pose, beckoning, striding, floating pose, raised arm, lifted foot — and any
+  similar movement or stance word. Replace with nothing. The T-pose is enforced by the prompt structure.
 - Use read_artifact to access AssetVisioneer's phase output before starting image generation
 - Render EVERY asset in the manifest — do not skip any"
 
