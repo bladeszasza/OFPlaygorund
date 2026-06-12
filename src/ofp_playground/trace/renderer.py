@@ -21,8 +21,17 @@ _EVENT_COLORS = {
 }
 
 
-def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
-    """Write a self-contained timeline graph (HTML) for the captured trace."""
+def render_trace_html(
+    collector: EventCollector,
+    output_path: Path,
+    live_session_id: str | None = None,
+) -> Path:
+    """Write a self-contained timeline graph (HTML) for the captured trace.
+
+    When ``live_session_id`` is given the generated page opens a WebSocket to
+    ``/ws/<live_session_id>`` and appends new events to the D3 timeline in
+    real time instead of rendering the static snapshot only.
+    """
     payload = collector.to_dict()
     # Escape </ so </script> inside string values doesn't terminate the <script> block.
     payload_json = json.dumps(payload).replace("</", "<\\/")
@@ -1247,6 +1256,28 @@ def render_trace_html(collector: EventCollector, output_path: Path) -> Path:
         .replace("__COLORS__", colors_json)
         .replace("__GENERATED_AT__", generated_at)
     )
+
+    if live_session_id:
+        live_script = f"""
+<script>
+(function() {{
+  var SESSION_ID = {json.dumps(live_session_id)};
+  var protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  var ws = new WebSocket(protocol + "//" + location.host + "/ws/" + SESSION_ID);
+  ws.onmessage = function(evt) {{
+    try {{
+      var data = JSON.parse(evt.data);
+      if (typeof window._appendLiveEvent === "function") {{
+        window._appendLiveEvent(data);
+      }}
+    }} catch(e) {{ /* ignore non-JSON */ }}
+  }};
+  ws.onerror = function() {{
+    console.warn("[live-trace] WebSocket error");
+  }};
+}})();
+</script>"""
+        html = html.replace("</body>", live_script + "\n</body>")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html, encoding="utf-8")

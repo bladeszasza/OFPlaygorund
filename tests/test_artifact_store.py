@@ -104,6 +104,24 @@ class TestArtifactStore:
     def test_read_not_found(self, store):
         assert store.read("nonexistent") is None
 
+    def test_read_returns_latest_for_duplicate_slug(self, store):
+        """read_artifact returns the most-recently saved artifact when the same
+        slug is written multiple times (e.g. MemoryKeeper beat updates)."""
+        store.save(agent_name="MemoryKeeper", content="beat-0 memory", slug="character-memory-hero")
+        store.save(agent_name="MemoryKeeper", content="beat-1 memory", slug="character-memory-hero")
+        store.save(agent_name="MemoryKeeper", content="beat-2 memory", slug="character-memory-hero")
+        assert store.read("character-memory-hero") == "beat-2 memory"
+
+    def test_get_index_deduplicates_by_slug(self, store):
+        """get_index shows only the latest artifact per slug."""
+        store.save(agent_name="MemoryKeeper", content="beat-0 memory", slug="character-memory-hero")
+        store.save(agent_name="MemoryKeeper", content="beat-1 memory", slug="character-memory-hero")
+        index = store.get_index()
+        assert "1 unique" in index
+        # The stale phase file (01_) must not appear; only the latest (02_) should.
+        assert "02_character-memory-hero" in index
+        assert "01_character-memory-hero" not in index
+
     def test_get_index_empty(self, store):
         assert store.get_index() == ""
 
@@ -111,7 +129,7 @@ class TestArtifactStore:
         store.save(agent_name="AssetDirector", content="9 assets")
         store.save(agent_name="GeomBuilder", content="build functions")
         index = store.get_index()
-        assert "PHASE ARTIFACTS (2 completed)" in index
+        assert "PHASE ARTIFACTS (2 unique)" in index
         assert "AssetDirector" in index
         assert "GeomBuilder" in index
         assert "read_artifact" in index

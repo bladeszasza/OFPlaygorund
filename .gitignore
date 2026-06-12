@@ -58,10 +58,13 @@ MANIFEST
 # Project specific
 ~/.ofp-playground/
 
+# Music band personas (personal/experimental)
+agents/music-band/
+
 # Project output
 result/
 docs/superpowers/
-ofp-images/
+/ofp-images/
 ofp-videos/
 ofp-music/
 ofp-breakout/

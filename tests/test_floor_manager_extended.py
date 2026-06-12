@@ -71,6 +71,38 @@ class TestAcceptDirective:
         assert "Chapter one content here." in fm._manuscript
 
     @pytest.mark.asyncio
+    async def test_accept_prose_appends_to_manuscript(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_text = "Chapter one content here."
+        await fm._handle_orchestrator_directives("[ACCEPT prose]")
+        assert "Chapter one content here." in fm._manuscript
+
+    @pytest.mark.asyncio
+    async def test_accept_plan_saves_artifact_but_not_manuscript(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_name = "CharacterArchitect"
+        fm._last_worker_text = "CHARACTER BLUEPRINT: planning content"
+        await fm._handle_orchestrator_directives("[ACCEPT plan]")
+        assert "CHARACTER BLUEPRINT: planning content" not in fm._manuscript
+        assert fm._last_worker_text == ""  # consumed
+
+    @pytest.mark.asyncio
+    async def test_accept_image_saves_artifact_but_not_manuscript(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_name = "AquarellePainter"
+        fm._last_worker_text = "ILLUSTRATION: Beat 3 — threshold moment"
+        await fm._handle_orchestrator_directives("[ACCEPT image]")
+        assert "ILLUSTRATION: Beat 3 — threshold moment" not in fm._manuscript
+        assert fm._last_worker_text == ""  # consumed
+
+    @pytest.mark.asyncio
+    async def test_accept_plan_case_insensitive(self):
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_text = "Planning content"
+        await fm._handle_orchestrator_directives("[ACCEPT PLAN]")
+        assert "Planning content" not in fm._manuscript
+
+    @pytest.mark.asyncio
     async def test_accept_without_prior_worker_text(self):
         bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
         fm._last_worker_text = ""
@@ -88,6 +120,17 @@ class TestAcceptDirective:
         mirrored = fm.output.sandbox / "phases" / "01_geom-builder.md"
         assert mirrored.exists()
         assert "Hero geometry spec" in mirrored.read_text(encoding="utf-8")
+
+    @pytest.mark.asyncio
+    async def test_accept_plan_still_saves_artifact(self):
+        """[ACCEPT plan] must persist the phase artifact even though it skips manuscript."""
+        bus, fm, fm_q, orc_q, orc_uri = await _setup_fm_with_orchestrator()
+        fm._last_worker_name = "VerseArchitect"
+        fm._last_worker_text = "VERSE THREAD MANIFEST: planning artifact"
+        await fm._handle_orchestrator_directives("[ACCEPT plan]")
+        # Artifact store should have received it
+        index = fm._artifact_store.all_artifacts()
+        assert any("verse-architect" in entry.slug.lower() for entry in index)
 
 
 # ---------------------------------------------------------------------------
@@ -515,3 +558,36 @@ class TestAssignParallelDirective:
         await fm._maybe_return_floor_to_orchestrator()
 
         assert orc_uri in grants
+
+
+# ---------------------------------------------------------------------------
+# _on_artifact_saved callback
+# ---------------------------------------------------------------------------
+
+async def test_on_artifact_saved_callback_invoked() -> None:
+    """_on_artifact_saved is called after _save_character_memory_blocks."""
+    bus = MessageBus()
+    floor = FloorManager(bus)
+
+    received: list[dict] = []
+    floor._on_artifact_saved = received.append
+
+    text = "=== CHARACTER MEMORY: Raphael ===\nHe is brave.\n=== END ==="
+    floor._save_character_memory_blocks(text, "MemoryKeeper")
+
+    assert len(received) == 1
+    evt = received[0]
+    assert evt["type"] == "artifact_saved"
+    assert evt["slug"] == "character-memory-raphael"
+    assert evt["agent"] == "MemoryKeeper"
+    assert evt["kind"] == "phase"
+    assert "He is brave." in evt["preview"]
+
+
+async def test_on_artifact_saved_not_called_when_none() -> None:
+    """No error when _on_artifact_saved is None (the default)."""
+    bus = MessageBus()
+    floor = FloorManager(bus)
+    # Default is None — must not raise
+    text = "=== CHARACTER MEMORY: Test ===\ncontent\n=== END ==="
+    floor._save_character_memory_blocks(text, "Agent")  # should not raise

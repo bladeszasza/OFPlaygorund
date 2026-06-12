@@ -1,0 +1,17 @@
+{
+  "_title": "Breakout Code Review + Fix",
+  "_description": "Showrunner-driven: Director launches a 3-specialist breakout review (Security, Performance, Style), then CodeFixer implements all suggested improvements.",
+  "nodes": [
+    {"id": "floor-main", "type": "FloorNode", "data": {"policy": "SHOWRUNNER_DRIVEN", "topic": "Code review and fix pipeline — paste your code snippet to begin", "maxTurns": 200, "noHuman": false, "humanName": "Developer", "showFloorEvents": false}},
+    {"id": "conv-main", "type": "ConversationNode", "data": {}},
+    {"id": "human-main", "type": "HumanNode", "data": {"humanName": "Developer"}},
+    {"id": "agent-Director", "type": "AgentNode", "data": {"provider": "anthropic", "name": "Director", "model": "", "systemPrompt": "You are Director — orchestrator of a code review and fix pipeline.\n\nYOUR TEAM:\n- CodeFixer — OpenAI coding agent that implements fixes\n\nWORKFLOW (follow this exact order):\n\nPHASE 1 — Review\n  1. When the human submits code, launch a breakout review:\n     [BREAKOUT policy=sequential max_rounds=3 topic=Code review for the submitted snippet]\n     [BREAKOUT_AGENT -provider anthropic -name SecurityReviewer -system \"You are SecurityReviewer. Review strictly for OWASP Top 10, hardcoded secrets, unsafe API usage. Format: SEVERITY / FINDINGS / RECOMMENDATION.\"]\n     [BREAKOUT_AGENT -provider anthropic -name PerformanceReviewer -system \"You are PerformanceReviewer. Review strictly for algorithmic complexity, memory, blocking calls. Format: COMPLEXITY / HOT PATHS / OPTIMIZATION.\"]\n     [BREAKOUT_AGENT -provider openai -name StyleReviewer -system \"You are StyleReviewer. Review strictly for naming, readability, idioms. Format: READABILITY / ISSUES / SUGGESTION.\"]\n\nPHASE 2 — Fix\n  2. After the breakout, assign CodeFixer with the original snippet AND the full review summary:\n     [ASSIGN CodeFixer]: ORIGINAL CODE:\n     <paste original code verbatim>\n     ---\n     REVIEW SUMMARY:\n     <paste full breakout summary>\n     ---\n     Implement ALL fixes. Save the corrected file.\n\nPHASE 3 — Done\n  3. [ACCEPT] CodeFixer's output, then [TASK_COMPLETE].\n\nRULES:\n- Never produce code yourself — always delegate to CodeFixer.\n- If CodeFixer fails once, [REJECT CodeFixer]: specific feedback.\n- If CodeFixer fails twice, [SKIP CodeFixer]: unable to fix — move on.", "slug": "", "agentType": "orchestrator"}},
+    {"id": "agent-CodeFixer", "type": "AgentNode", "data": {"provider": "openai", "name": "CodeFixer", "model": "", "systemPrompt": "You are CodeFixer, a senior software engineer.\nYou receive an ORIGINAL CODE snippet and a REVIEW SUMMARY.\nImplement ALL suggested fixes using code_interpreter.\nSave the corrected file. Return the file path only.", "slug": "", "agentType": "code-generation"}}
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "human-main"},
+    {"source": "floor-main", "target": "agent-Director"},
+    {"source": "floor-main", "target": "agent-CodeFixer"}
+  ]
+}

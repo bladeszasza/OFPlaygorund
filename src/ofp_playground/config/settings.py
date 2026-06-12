@@ -37,10 +37,10 @@ class DefaultsConfig:
     llm_model_anthropic: str = "claude-haiku-4-5-20251001"          # smallest Claude
     vision_model_anthropic: str = "claude-haiku-4-5-20251001"       # Claude vision (image-to-text)
     llm_model_openai: str = "gpt-5.4-nano"                          # smallest GPT-5.4
-    image_model_openai: str = "gpt-5"                               # model used with image_generation tool
+    image_model_openai: str = "gpt-5.4"                               # model used with image_generation tool
     video_model_openai: str = "sora-2"                              # Sora video generation
     vision_model_openai: str = "gpt-4o-mini"                        # OpenAI vision (image-to-text)
-    llm_model_google: str = "gemini-3.1-flash-lite-preview"          # default Gemini text model
+    llm_model_google: str = "gemini-3.1-flash-lite"          # default Gemini text model
     image_model_google: str = "gemini-3.1-flash-image-preview"      # Gemini image generation (Nano Banana)
     vision_model_google: str = "gemini-3-flash-preview"              # Gemini vision (image-to-text)
     music_model_google: str = "models/lyria-realtime-exp"            # Lyria RealTime music generation

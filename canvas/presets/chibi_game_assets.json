@@ -1,0 +1,65 @@
+{
+  "_title": "Chibi Game Asset Generation",
+  "_description": "3-agent showrunner pipeline: GPT-5.4 orchestrator coordinates a world-bible designer and a GPT Image 2 painter to generate a complete set of chibi-style humanoid game asset sheets (T-pose characters + props).",
+  "nodes": [
+    {
+      "id": "floor-main",
+      "type": "FloorNode",
+      "data": {
+        "policy": "SHOWRUNNER_DRIVEN",
+        "topic": "Generate a complete chibi game asset library: humanoid hero, heroine, plushy animals, lizard animals, houses, fences, and trees — all in toon 3D chibi style. ALL characters MUST be in strict T-pose (arms extended straight out horizontally at shoulder height, legs straight and parallel) — never walking, running, or action poses. Front + back views per character. Style: big head, small body, vibrant colors, white background.",
+        "maxTurns": 200,
+        "noHuman": true,
+        "humanName": "User",
+        "showFloorEvents": false
+      }
+    },
+    {
+      "id": "conv-main",
+      "type": "ConversationNode",
+      "data": {}
+    },
+    {
+      "id": "agent-ChibiOrchestrator",
+      "type": "AgentNode",
+      "data": {
+        "provider": "openai",
+        "name": "ChibiOrchestrator",
+        "model": "gpt-5.4",
+        "systemPrompt": "You are ChibiOrchestrator, the creative director of a chibi game asset generation pipeline.\n\nTEAM: AssetVisioneer, ChibiPainter.\n\nMISSION: Generate a complete, coherent set of chibi-style game assets. All characters are humanoid bipeds in T-pose, riggable with a single skeleton. Style: 3D toon chibi — big head, small body, vibrant colors, clean white background.\n\nASSET BRIEF (minimum — expand freely based on AssetVisioneer's world design):\n- Hero x1 (humanoid, front+back)\n- Heroine x1 (humanoid, front+back)\n- Plushy animal characters x5 (round, soft, big eyes — humanoid biped)\n- Lizard animal characters x5 (scaled, sleek — humanoid biped)\n- Side characters / extras as AssetVisioneer deems fitting\n- Houses x7 (various styles, props)\n- Fences (1 set or sheet, props)\n- Trees x6 (various types, props)\n- Additional props as AssetVisioneer sees fit\n\nPIPELINE:\n\nPhase 1: [ASSIGN AssetVisioneer]\nTask: Design the full world bible — game world theme, master color palette, and a complete asset manifest with visual briefs for every asset. Expand beyond the minimum if the world calls for more characters or prop variants.\n\nPhase 2+: After reading AssetVisioneer's manifest via read_artifact, loop through every asset:\n  For each CHARACTER asset (type=character):\n    [ASSIGN ChibiPainter]\n    (1) chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, front facing, strict T-pose, both arms extended straight out horizontally at shoulder height palms down, both legs straight parallel feet flat, rigging reference pose, NOT walking NOT running NOT action pose, full body visible, centered, symmetrical, game character asset sheet, [visual brief from manifest], key colors: [hex values from world palette]\n    (2) chibi 3D toon render, big head small body proportions, vibrant saturated colors, clean white background, back view, rear facing, strict T-pose, both arms extended straight out horizontally at shoulder height palms down, both legs straight parallel feet flat, rigging reference pose, NOT walking NOT running NOT action pose, full body visible, centered, symmetrical, game character asset sheet, [same character visual brief], key colors: [hex values]\n\n  For each PROP asset (type=prop):\n    [ASSIGN ChibiPainter]\n    chibi 3D toon render, vibrant saturated colors, clean white background, [single/sheet/front view as specified in manifest], clean silhouette, game prop asset, [visual brief from manifest], key colors: [hex values]\n\n[TASK_COMPLETE] after all assets from the manifest are rendered.\n\nRULES:\n- Use read_artifact to access AssetVisioneer's phase output before starting image generation\n- Render EVERY asset in the manifest — do not skip any\n- Characters always get both front AND back view renders in a single assign using (1)/(2) compound format\n- The painter will automatically use the front view as a reference image when generating the back view\n- Craft each prompt to encode the specific palette and visual brief from the manifest\n- Props: use your judgment on views — symmetric props need only one; asymmetric props may benefit from two",
+        "slug": "",
+        "agentType": "orchestrator"
+      }
+    },
+    {
+      "id": "agent-AssetVisioneer",
+      "type": "AgentNode",
+      "data": {
+        "provider": "openai",
+        "name": "AssetVisioneer",
+        "model": "gpt-5.4",
+        "systemPrompt": "",
+        "slug": "@creative/game-asset-visioneer",
+        "agentType": ""
+      }
+    },
+    {
+      "id": "agent-ChibiPainter",
+      "type": "AgentNode",
+      "data": {
+        "provider": "openai",
+        "name": "ChibiPainter",
+        "model": "gpt-image-2-2026-04-21",
+        "systemPrompt": "",
+        "slug": "@ofp-images/chibi-game-asset-painter",
+        "agentType": "text-to-image"
+      }
+    }
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "agent-ChibiOrchestrator"},
+    {"source": "floor-main", "target": "agent-AssetVisioneer"},
+    {"source": "floor-main", "target": "agent-ChibiPainter"}
+  ]
+}

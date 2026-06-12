@@ -172,9 +172,13 @@ class ArtifactStore:
     def get_index(self, max_summary_chars: int = 120) -> str:
         """Return a compact artifact index for injection into system prompts.
 
+        Only the latest artifact per slug is shown — earlier saves with the same
+        slug (e.g. stale character-memory-* from a prior beat) are hidden so agents
+        always see current state.
+
         Format::
 
-            --- PHASE ARTIFACTS (3 completed) ---
+            --- PHASE ARTIFACTS (3 unique) ---
             01_asset-manifest.md  | AssetDirector | 9 assets defined for hero, obstacles, ...
             02_char-design.md     | CharDesigner  | Parts tables for all 9 assets
             03_geometry-code.md   | GeomBuilder   | 9 buildXxx() Three.js functions (~5200 tok)
@@ -183,8 +187,15 @@ class ArtifactStore:
         if not self._artifacts:
             return ""
 
-        lines = [f"--- PHASE ARTIFACTS ({len(self._artifacts)} completed) ---"]
+        # Deduplicate: keep only the latest artifact per slug (last write wins).
+        latest_by_slug: dict[str, PhaseArtifact] = {}
         for art in self._artifacts:
+            latest_by_slug[art.slug] = art
+
+        lines = [f"--- PHASE ARTIFACTS ({len(latest_by_slug)} unique) ---"]
+        for art in self._artifacts:
+            if latest_by_slug[art.slug] is not art:
+                continue  # skip superseded versions
             filename = f"{art.phase_num:02d}_{art.slug}.md"
             summary = art.summary[:max_summary_chars]
             lines.append(
@@ -235,10 +246,15 @@ class ArtifactStore:
     # ── Internal ─────────────────────────────────────────────────────────
 
     def _resolve(self, query: str) -> Optional[PhaseArtifact]:
-        """Find an artifact by exact slug, phase number, or substring."""
+        """Find an artifact by exact slug, phase number, or substring.
+
+        For slug and substring matches the *latest* saved artifact wins so that
+        updated character memories (e.g. after Beat 2) are returned instead of
+        the stale Beat 0 version saved earlier under the same slug.
+        """
         q = query.strip().lower()
 
-        # Try exact phase number
+        # Try exact phase number — phase numbers are unique, return on first hit.
         try:
             num = int(q)
             for art in self._artifacts:
@@ -250,14 +266,16 @@ class ArtifactStore:
         # Remove .md extension and leading digits for slug matching
         q_clean = re.sub(r"^\d+_", "", q.replace(".md", ""))
 
-        # Exact slug match
+        # Exact slug match — keep iterating to find the LAST (most recent) match.
+        result: Optional[PhaseArtifact] = None
         for art in self._artifacts:
             if art.slug == q_clean:
-                return art
+                result = art
+        if result:
+            return result
 
-        # Substring match on slug or agent name
+        # Substring match on slug or agent name — last match wins.
         for art in self._artifacts:
             if q_clean in art.slug or q_clean in art.agent_name.lower():
-                return art
-
-        return None
+                result = art
+        return result

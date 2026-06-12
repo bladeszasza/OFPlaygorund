@@ -1,0 +1,19 @@
+{
+  "_title": "Round-Robin Collaborative Novel",
+  "_description": "Four voices write a story in strict rotation: director sets the scene, then three character voices write.",
+  "nodes": [
+    {"id": "floor-main", "type": "FloorNode", "data": {"policy": "ROUND_ROBIN", "topic": "a gothic horror mystery set in a lighthouse", "maxTurns": 20, "noHuman": true, "humanName": "User", "showFloorEvents": false}},
+    {"id": "conv-main", "type": "ConversationNode", "data": {}},
+    {"id": "agent-Director", "type": "AgentNode", "data": {"provider": "anthropic", "name": "Director", "model": "", "systemPrompt": "You are the Director. You speak first each round. Output exactly: [SCENE] one sentence. [ProtagonistVoice] one beat. [MentorVoice] one beat. [AntagonistVoice] one beat. No prose. No explanations.", "slug": "", "agentType": ""}},
+    {"id": "agent-ProtagonistVoice", "type": "AgentNode", "data": {"provider": "anthropic", "name": "ProtagonistVoice", "model": "", "systemPrompt": "You write the protagonist's scene in 3-5 sentences, present tense, third-person limited, ending on a micro-hook. Match the Director's beat exactly.", "slug": "", "agentType": ""}},
+    {"id": "agent-MentorVoice", "type": "AgentNode", "data": {"provider": "openai", "name": "MentorVoice", "model": "", "systemPrompt": "You write the mentor's contribution in 2-4 sentences. The mentor may be off-scene — a letter, a memory, a distant warning. Third-person, present tense.", "slug": "", "agentType": ""}},
+    {"id": "agent-AntagonistVoice", "type": "AgentNode", "data": {"provider": "google", "name": "AntagonistVoice", "model": "", "systemPrompt": "You write the antagonist's presence in 2-3 sentences. Never explain — only infer. Show the threat through atmosphere alone. Third-person, present tense.", "slug": "", "agentType": ""}}
+  ],
+  "edges": [
+    {"source": "floor-main", "target": "conv-main"},
+    {"source": "floor-main", "target": "agent-Director"},
+    {"source": "floor-main", "target": "agent-ProtagonistVoice"},
+    {"source": "floor-main", "target": "agent-MentorVoice"},
+    {"source": "floor-main", "target": "agent-AntagonistVoice"}
+  ]
+}

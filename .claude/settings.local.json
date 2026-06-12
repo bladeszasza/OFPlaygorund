@@ -61,7 +61,9 @@
       "Bash(bash -n /Users/bolyos/Development/ofpPlaygorund/examples/example_digimon_world_game.sh)",
       "Bash(.venv/bin/pip show:*)",
       "Bash(.venv/bin/python -c \"import anthropic; c = anthropic.AsyncAnthropic\\(api_key='x'\\); print\\(dir\\(c.beta.messages\\)\\)\")",
-      "Bash(.venv/bin/python:*)"
+      "Bash(.venv/bin/python:*)",
+      "Bash(git ls-tree *)",
+      "mcp__claude_ai_Hugging_Face__hub_repo_details"
     ]
   }
 }

@@ -134,7 +134,7 @@ Full table in [docs/agents.md](docs/agents.md).
 |---|---|---|
 | Anthropic | `anthropic` / `claude` | `claude-haiku-4-5-20251001` |
 | OpenAI | `openai` / `gpt` | `gpt-5.4-nano` |
-| Google | `google` / `gemini` | `gemini-3.1-flash-lite-preview` |
+| Google | `google` / `gemini` | `gemini-3.1-flash-lite` |
 | HuggingFace | `hf` / `huggingface` | `MiniMaxAI/MiniMax-M2.7` |
 
 Supported task types across providers: text generation, image generation, image-to-text (vision), text-to-music, text-to-video, code-generation (OpenAI/Anthropic/Google), classification, NER, summarization, orchestrator.

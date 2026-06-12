@@ -120,7 +120,7 @@ Gradio-backed human agent. Uses two async queues:
 
 **File**: `src/ofp_playground/agents/llm/google.py`  
 **Provider**: Google  
-**Default model**: `gemini-3.1-flash-lite-preview`  
+**Default model**: `gemini-3.1-flash-lite`  
 **API**: `client.models.generate_content()`
 
 ### HuggingFaceAgent
@@ -173,7 +173,7 @@ Responds to:
 
 **File**: `src/ofp_playground/agents/llm/openai_image.py`  
 **CLI type**: `openai:text-to-image`  
-**Default model**: `gpt-5` (Responses API with `image_generation` tool)  
+**Default model**: `gpt-5.4` (Responses API with `image_generation` tool)  
 **Output**: `result/<session>/images/`
 
 ### GeminiImageAgent (Nano Banana)

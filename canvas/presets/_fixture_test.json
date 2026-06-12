@@ -1,0 +1,12 @@
+{
+  "_title": "Test Fixture",
+  "_description": "Used by tests only.",
+  "nodes": [
+    {
+      "id": "floor-main",
+      "type": "FloorNode",
+      "data": {"policy": "SEQUENTIAL", "topic": "test", "maxTurns": null, "noHuman": true, "humanName": "User", "showFloorEvents": false}
+    }
+  ],
+  "edges": []
+}
